@@ -1,0 +1,20 @@
+{
+  "name": "lopsided-skills",
+  "version": "0.1.0",
+  "description": "A set of highly opinionated agent skills, with a dash of NIH thrown in for fun and profit.",
+  "license": "GPL-3.0-only",
+  "keywords": [
+    "pi-package",
+    "skills",
+    "agent-skills"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vhallac/lopsided-skills"
+  },
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  }
+}
