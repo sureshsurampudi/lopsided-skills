@@ -21,12 +21,14 @@ All skills here are **GPL-3.0**. See [LICENSE](LICENSE).
 | [`story-designing`](skills/story-designing/) | Design of implementation stories from use cases, feeding story-grooming. |
 | [`story-grooming`](skills/story-grooming/) | Grooms issues (epics/stories/tasks) into Cockburn use cases with a fixed architect/product-owner/reviewer split, using the issues themselves as the only communication medium. Supports a continuing groom → review loop across sessions. |
 | [`instruction-reliability`](skills/instruction-reliability/) | Techniques for writing effective AI instructions — from scratch or improving existing ones: de-escalating emphasis, fixing skipped or over-applied rules, and making instruction sets consistent. |
+| [`worktree-management`](skills/worktree-management/) | Git worktree veneer for parallel development streams — create, attach, list, release. Enforces one plan per root and one root per stream. |
 | [`publish-review`](skills/publish-review/) | Publishes a review produced by `review-change` to its channel — PR/MR comment, forge issue comment, or work-item notes — with the operator's decision (fix / accept / defer, file / decline) on every finding. Never reviews code itself. |
 
 `plan-work` and `large-task-slicing` are designed to be used together: the
 former decides *what* the controlled change is, the latter drives its execution
 unit by unit. `review-change` and `publish-review` are likewise a pair: the
-first writes the report, the second posts it.
+first writes the report, the second posts it. `worktree-management` gives each
+parallel stream an isolated root, one plan per root.
 
 ## Installation
 
