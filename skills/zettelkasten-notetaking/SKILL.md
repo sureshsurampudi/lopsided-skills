@@ -83,7 +83,8 @@ the card is not atomic — split it. Ends with zero or more typed link lines:
 
 - **H1 = stable branching ID.** Zettelkasten-style, numeric all the way: `1`, `1.1`, `1.1.1`, `1.1.2`. A child appends the next dotted numeric segment to its parent's ID (sibling sequence). IDs are never reused or renumbered. Uniform numeric segments sort naturally (`sort -V`), validate with one regex, and a subtree is one literal prefix grep (`^# 1\.1\(\.\|$\)` catches all descendants of `1.1`).
 - **H2 = title.** A claim, not a topic. "Random walks surface stale decisions", not "Random walks".
-- **Body = short.** Feynman test: you must be able to say the idea in one sentence before writing the card.
+- **Body = short.** Feynman test: you must be able to say the idea in one sentence before writing the card. `store.py` rejects bodies over 600 characters and titles over 80; if the idea doesn't fit, split it.
+- **Cold readability.** A card must make sense to someone reading it with no conversation context. No "this conversation", "step 2", "the attack above" — name the things themselves.
 
 ## Operation: Write a card
 
@@ -94,7 +95,7 @@ The index is in-context for every write. Do not grep for ideas; grep only for lo
 2. Load `.notes/zettel-index.md` fully.
 3. Scan titles. Shortlist the headings under which the new idea could live.
 4. Read the full text of each shortlisted card in `.notes/zettel.md`.
-5. If one makes sense as a parent, find exactly where among its children the new card belongs (sibling order = conceptual adjacency, not chronology). Assign the next child ID.
+5. If one makes sense as a parent, the new card is that parent's next child: its ID is the parent's ID plus `.N`, where N is the parent's current highest sibling leaf + 1. No gaps, no reordering — `store.py` rejects any other ID. (Sibling order = conceptual adjacency, not chronology; place later with children if needed.)
 6. If none fits, create a new top-level ID.
 7. Create the card only through `store.py`; it inserts after the parent's final descendant (or at end of file for top-level), appends the `ID — Title` index entry, validates, and commits:
    ```sh
@@ -115,6 +116,7 @@ Search in three passes, using the index first and reading candidate cards:
 1. **Direct** — same branch, obvious relatives.
 2. **Conceptual** — different branch, same underlying idea.
 3. **Forced cross-domain** — pick one distant branch and ask "what would have to be true for these to connect?"
+4. **Contradiction pass** — for every shortlisted candidate, explicitly ask "does anything existing contradict or question this card?" Do not stop at support/extension links; `contradicts` and `questions` are first-class kinds, not exceptional ones.
 
 For each link found, add a typed ref and its reciprocal backlink only through `store.py`:
 
@@ -182,5 +184,5 @@ Trigger: every ~15 new cards, or on demand. This is the integration check.
 - Cards are immutable in content once written (except appended link lines). Correction = new card + `contradicts`/`extends` link.
 - Never hand-edit, delete, or regenerate `.notes/.store-state`, and never commit with `--no-verify`; both exist to catch hand edits.
 - Tags are deliberately deferred. Do not invent a tag system.
-- Keep bodies short. If a card grows past ~10 lines, split it and link the parts.
+- Keep bodies short: at most 600 characters and 80-character titles — `store.py` rejects longer. If the idea doesn't fit, split it and link the parts. (Existing cards are immutable; the cap binds new writes only.)
 - A card may be superseded by a newer card through typed links; do not delete or rewrite it under the current append-and-place policy. Any future mutability policy must preserve resolvable IDs and reciprocal links.

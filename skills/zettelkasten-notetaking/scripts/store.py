@@ -33,7 +33,9 @@ This note store is managed by the **zettelkasten-notetaking** skill.
 - This file is protected: commits that modify or delete it are rejected by
   the pre-commit hook, and `store.py` recreates it if it is ever deleted.
 """
-STAGE_FILES = (*NOTE_FILES, STATE_FILE, GUARD_FILE)
+GITIGNORE_FILE = ".gitignore"
+GITIGNORE_BODY = ".DS_Store\n"
+STAGE_FILES = (*NOTE_FILES, STATE_FILE, GUARD_FILE, GITIGNORE_FILE)
 
 
 class StoreError(RuntimeError):
@@ -246,6 +248,22 @@ def git(notes: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
     )
 
 
+def ensure_gitignore(notes: Path) -> bool:
+    """Ensure .notes/.gitignore ignores .DS_Store; return True if modified."""
+    gitignore = notes / GITIGNORE_FILE
+    if not gitignore.is_file():
+        gitignore.write_text(GITIGNORE_BODY, encoding="utf-8")
+        return True
+    content = gitignore.read_text(encoding="utf-8")
+    if any(line.rstrip() == ".DS_Store" for line in content.splitlines()):
+        return False
+    # Append instead of overwriting so user-customized ignore rules survive.
+    if not content.endswith("\n"):
+        content += "\n"
+    gitignore.write_text(content + GITIGNORE_BODY, encoding="utf-8")
+    return True
+
+
 def ensure_local_repository(notes: Path) -> None:
     if not (notes / ".git").exists():
         result = subprocess.run(
@@ -296,15 +314,6 @@ def ensure_guard(notes: Path) -> bool:
     return True
 
 
-def ensure_guard(notes: Path) -> bool:
-    """Resurrect the guard file if missing or altered; return True if rewritten."""
-    guard = notes / GUARD_FILE
-    if guard.is_file() and guard.read_text(encoding="utf-8") == GUARD_BODY:
-        return False
-    guard.write_text(GUARD_BODY, encoding="utf-8")
-    return True
-
-
 def require_clean(notes: Path) -> None:
     status = git(notes, "status", "--porcelain").stdout
     if status:
@@ -330,10 +339,24 @@ def initialize(root: Path) -> str:
     require_valid(cards_text, index_text)
     ensure_local_repository(notes)
     install_hook(notes)
+    ensure_gitignore(notes)
     has_head = git(notes, "rev-parse", "--verify", "HEAD", check=False).returncode == 0
-    if ensure_guard(notes) and has_head and git(notes, "status", "--porcelain").stdout.strip():
+    guard_rewritten = ensure_guard(notes)
+    if guard_rewritten and has_head and git(notes, "status", "--porcelain").stdout.strip():
+        state = notes / STATE_FILE
+        if state.is_file() and state.read_text(encoding="utf-8") != note_hashes(cards_text, index_text):
+            raise StoreError(
+                "note files were modified outside store.py; hand edits are not allowed. "
+                f"{SKILL_HINT}"
+            )
         commit_hash = commit(notes, "notes: restore guard file")
         return f"OK: guard file restored at {commit_hash}"
+    status = git(notes, "status", "--porcelain").stdout
+    if has_head and status.strip():
+        touched = {line[3:] if line[1:2] == " " else line[2:].lstrip() for line in status.splitlines()}
+        if touched == {GITIGNORE_FILE}:
+            commit_hash = commit(notes, "notes: add .gitignore")
+            return f"OK: local notes history is ready; .gitignore added at {commit_hash}"
     if not has_head:
         commit_hash = commit(notes, "notes: initialize history")
         return f"OK: initialized local notes history at {commit_hash}"
@@ -416,16 +439,31 @@ def prepare_history(root: Path) -> Path:
     return notes
 
 
+TITLE_MAX_CHARS = 80
+BODY_MAX_CHARS = 600
+
+
 def validate_card_content(title: str, body: str) -> tuple[str, str]:
     if not title.strip() or "\n" in title or "\r" in title:
         raise StoreError("title must be one non-empty line")
+    title = title.strip()
+    if len(title) > TITLE_MAX_CHARS:
+        raise StoreError(
+            f"title must be at most {TITLE_MAX_CHARS} characters (got {len(title)}); "
+            "split the idea instead"
+        )
     body = body.strip()
     if not body:
         raise StoreError("body must be non-empty")
+    if len(body) > BODY_MAX_CHARS:
+        raise StoreError(
+            f"body must be at most {BODY_MAX_CHARS} characters (got {len(body)}); "
+            "split the idea instead"
+        )
     for line in body.splitlines():
         if line == "---" or line.startswith(("# ", "## ", "→", "←")):
             raise StoreError("body cannot contain card separators, headings, or typed links")
-    return title.strip(), body
+    return title, body
 
 
 def expected_id(card_id: str, cards: list[Card]) -> None:
