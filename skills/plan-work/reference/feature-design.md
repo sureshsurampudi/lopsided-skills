@@ -27,6 +27,12 @@ Name interfaces and standing contracts from the spec's vocabulary (the user's
 terms), not from code reading. Flag any long-standing contract or user-visible
 behavior as an open question — those are the user's decisions to make.
 
+For each behavior slice, choose the cheapest strong evidence: make the failure
+impossible by structure (types, invariants, boundary validation); otherwise a
+decision's named check or an anchored test; otherwise a manual check. If none
+is worth the cost, record it as an accepted risk. It appears in the tail
+unit's account.
+
 ## Shape
 
 These tasks finish in one or two sittings: a single-level unit list, no

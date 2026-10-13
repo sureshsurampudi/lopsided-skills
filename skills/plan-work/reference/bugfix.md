@@ -28,6 +28,8 @@ Find the defect site and the blast radius:
 - Must not change: everything observable beyond the symptom — behavior, APIs,
   output shape.
 - Regression guard: the check that fails before the fix and passes after.
+- Bug class: misread spec | collateral | other — record it in the PR or issue
+  comment, not `findings.md` (`.todo` archives are not committed).
 
 For review findings: one unit per finding (or per tightly-coupled finding
 group), each carrying its regression guard where cheaply expressible. If the
@@ -42,3 +44,7 @@ command — when it is cheaply expressible. It verifies the fix; it is not an
 acceptance gate for the report. If expressing the failure as a test is
 expensive, verify with the affected tests plus the full suite and label the
 verification weak in the report.
+
+For collateral bugs, prefer a boundary check (corpus invariant, golden or
+differential output, contract snapshot) as the regression guard when it
+generalises beyond the single failure. Use a unit test when it does not.

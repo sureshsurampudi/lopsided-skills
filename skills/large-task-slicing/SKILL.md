@@ -330,6 +330,7 @@ Prefer objective, repeatable commands (they become the unit's `verify`):
 - Content exists: `grep -n "anchor-or-label" path`
 - Count remaining items: `plan.py status <root> | grep "Remaining open"`
 - Git state: `git status --short`
+- Anchor checks: invariant script, golden diff, canary run (project-specific)
 - Tests/build: project-specific test command
 
 ---

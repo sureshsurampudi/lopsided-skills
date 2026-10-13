@@ -86,8 +86,9 @@ The main checkout hosts no plans; it stays the review/merge surface.
 ## Step 2 — Scope lock
 
 Before drafting the scope lock, consult `design/decisions/README.md` (if it
-exists) and read every decision whose topic overlaps with the changed paths or
-domain concepts named in the task. Apply what you read:
+exists) and read only the decisions whose topic overlaps with the changed
+paths or domain concepts named in the task — do not walk the whole index, so
+cost does not grow with decision history. Apply what you read:
 
 - **Must not change** — name every decision that constrains this change.
 - **Open questions** — if the change would violate or supersede a decision,
@@ -99,12 +100,17 @@ Produce exactly this block, in the input's vocabulary:
 ```
 ## Scope lock
 - Required behavior: <restate>
+- Behavioral anchors: <design decisions, READMEs, fixtures, CLI output,
+  logs, user examples that define correct behavior>
 - In scope: ...
 - Out of scope: ...
 - Must not change: ...
 - Assumptions: ...
 - Open questions: ...
 ```
+
+Checks MUST test externally anchored behavior, not mirror the implementation.
+A changed expectation needs an anchor.
 
 If an open question blocks the decomposition — wrong guesses here are costly —
 ask before planning. Otherwise proceed with assumptions stated.
@@ -138,6 +144,12 @@ Write each unit as a contract — it is the handoff to a fresh session:
   - verify: <one command>
 ```
 
+`verify` checks the unit's output against an anchor: a regression test
+(bugfix), a decision's named check, a corpus invariant, a golden or
+differential diff, or a canary run. Write a new test only when it locks a bug
+or is the named check of a decision. Never write one only so `verify` has
+something to run. If the honest check is inspection, say so and label it weak.
+
 ### Standard head/tail units (new-issue implementations)
 
 For plans implementing a new issue (feature or bugfix from a report), embed
@@ -151,8 +163,12 @@ tracked:
   Fold it into unit-001 if the first real unit is itself trivial; never as a
   stand-alone unit followed by another trivial unit.
 - **Tail unit** — push the branch, open the PR referencing the issue, and post
-  a one-paragraph behavioral summary comment on the issue. Input: green full
-  suite on the branch. Verify: PR URL returned. Contract must state: *execute
+  an **account** comment on the issue covering: the claims the change makes
+  (required behaviour, in the spec's vocabulary); the evidence for each claim
+  (check, test, invariant, inspection — labelled); what remains unverified,
+  assumed, or accepted as a risk; and known pre-existing red on the base,
+  with issue references. Input: no new red on the branch relative to the base.
+  Verify: PR URL returned. Contract must state: *execute
   only when all other units are done* — plan approval is the explicit go, and
   the unit still runs only at the end.
 - **Review-remediation plans are exempt.** Plans born from review findings on
@@ -195,13 +211,18 @@ verbatim.
 
 ## Gating Rules (both paths)
 
-- **File gate:** after modifying each file, run the unit tests covering that
-  file and go green before touching the next file — local breakage is caught
-  where it was introduced.
-- **Commit gate:** before each commit, run the full test suite. Never commit
-  broken code — the commit is the coherence boundary, and a red commit makes
-  every later increment untrustworthy. One unit = one commit = one coherent
-  change.
+- **Unit gate:** while a unit is in progress, run only the tests related to
+  the files it touches (e.g. `vitest related <files>`), with failures-only
+  output. Red mid-unit is expected. Go green at the unit boundary, not after
+  each file.
+- **Commit gate:** before each commit, run the declared gates once; a
+  project-level pre-commit hook enforces this. The bar is **no new red
+  relative to the base branch** — the commit is the coherence boundary, and a
+  red commit makes every later increment untrustworthy. If a test fails that
+  this unit did not touch, confirm it also fails on the base; do not fix it in
+  this branch. List it, with an issue reference, in the unit report and in the
+  PR — red that has no issue is not allowed. One unit = one commit = one
+  coherent change.
 - **Remote gate:** local commits are part of unit completion; push, PR, and any
   other remote transition happen only on the user's explicit go. For plan-path
   new-issue work, plan approval is the explicit go for the standard tail (PR)
@@ -212,11 +233,19 @@ verbatim.
 ## Completion
 
 Done when: every unit is checked (plan path) or the change is committed with
-the full suite green (small path); durable findings are promoted to project
+no new red relative to the base (small path); durable findings are promoted to project
 knowledge; `.todo/` is archived via `plan.py archive`; and the plan path notes
 in findings any deviation between the estimate and what actually changed.
 After the user confirms the merge, `release` the workspace via the
 worktree-management skill (archive first — release refuses open plans).
+
+### Reconcile documentation
+
+Correct design documents named in the scope lock against what was actually
+built. Update the README and user-facing docs for changed commands, env vars,
+structure or user-visible behavior. Bug fixes and refactors trigger this only
+when they change described behavior. For the plan path, this can be a unit
+before the tail unit.
 
 ### Promote durable findings
 
@@ -232,6 +261,9 @@ Promote:
   new one.
 - **Empirical observations that generalize:** create or update the relevant
   KB note under `design/decisions/`.
+
+New and changed decisions are promoted with status `proposed`; the user flips
+them to `accepted` at merge.
 
 Then update `design/decisions/README.md` — one indexed line per decision:
 `NNN — topic — Status`.

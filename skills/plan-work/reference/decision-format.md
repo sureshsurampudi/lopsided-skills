@@ -47,6 +47,16 @@ What becomes easier, harder, or impossible as a result?
 What new constraints does this decision impose on future work?
 ```
 
+## Enforced by
+
+```markdown
+## Enforced by
+type | invariant (<script>) | golden (<fixture>) | bug-lock test (<file>) | review only
+```
+
+Attaches checks to intent rather than to the implementation. review-change's
+decision matrix can verify that the named check exists and runs.
+
 ## Status lifecyle
 
 | Status | Meaning |
@@ -55,6 +65,11 @@ What new constraints does this decision impose on future work?
 | `accepted` | In force; plans must consult and comply |
 | `superseded (by NNN)` | Replaced by a newer decision; the record stays as provenance |
 | `amended (by NNN)` | Modified by a newer decision; read both together |
+
+When a plan changes behavior covered by an accepted decision, the promotion
+step must mark the old record `superseded (by NNN)` or `amended (by NNN)`.
+Never leave two accepted decisions in conflict — stale decisions make review
+flag correct code.
 
 ## Assignment
 
