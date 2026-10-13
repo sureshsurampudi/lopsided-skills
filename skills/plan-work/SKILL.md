@@ -211,6 +211,10 @@ verbatim.
 
 ## Gating Rules (both paths)
 
+If the project has a `gates.yaml` manifest (written by the commit-gate-wiring
+skill), take the gate commands and their `enforced_by` mode from it verbatim —
+the rules below describe the default when no manifest is declared.
+
 - **Unit gate:** while a unit is in progress, run only the tests related to
   the files it touches (e.g. `vitest related <files>`), with failures-only
   output. Red mid-unit is expected. Go green at the unit boundary, not after

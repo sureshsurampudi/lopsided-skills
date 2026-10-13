@@ -330,7 +330,12 @@ Prefer objective, repeatable commands (they become the unit's `verify`):
 - Content exists: `grep -n "anchor-or-label" path`
 - Count remaining items: `plan.py status <root> | grep "Remaining open"`
 - Git state: `git status --short`
-- Anchor checks: invariant script, golden diff, canary run (project-specific)
+- Gates: if the project has a `gates.yaml` manifest (written by the
+  commit-gate-wiring skill), take unit, commit, extra gates, and the
+  diff-coverage floor (when present) from it verbatim — do not re-derive or
+  guess project-specific checks
+- Anchor checks: invariant script, golden diff, canary run (project-specific
+  when no manifest declares them)
 - Tests/build: project-specific test command
 
 ---
