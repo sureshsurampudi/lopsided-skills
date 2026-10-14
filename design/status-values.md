@@ -1,6 +1,7 @@
 # Design note — card status values
 
-Status: draft design; to be groomed. Covers roadmap items #4 (obsolete state),
+Status: implemented (PR #2, issue #1). Standing decisions extracted to
+`design/decisions/` (001–005). Covers roadmap items #4 (obsolete state),
 #6 (note states), and #7 (superseding).
 
 ## Problem
@@ -42,12 +43,15 @@ and manual.
   statuses must be deterministic so incremental edits don't drift.
 - **Migration.** None: absence of status means `draft`.
 
-## Open questions
+## Open questions — Resolved
 
-1. Does `settled` actually gate mutations (re-parenting, superseding), or is it
-   advisory-only in v1?
-2. Where does status live — inline on the card line, or as a metadata field?
-3. Does `superseded` redirect at resolution time, or are inbound links
-   rewritten in the successor operation?
-4. Do `verified`/`settled` transitions need a recorded justification (source,
-   evidence pointer) or just the flip?
+1. `settled` is advisory-only in v1 (D5): the operator is asked for explicit
+   confirmation before a settled mutation; `store.py` never refuses.
+2. Status lives inline as an index-line annotation
+   (`[draft|verified|settled|obsolete]` or `[superseded → <id>]`); absence
+   means `draft`. Card bodies stay untouched.
+3. `superseded` redirects at resolution time: inbound links are never
+   rewritten (D2); the `[superseded → <id>]` annotation resolves to the
+   successor when the old card is addressed.
+4. Transitions record a rationale (via `set-status --rationale`), which is
+   carried into the local store commit message (D3).

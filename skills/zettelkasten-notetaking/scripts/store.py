@@ -13,13 +13,27 @@ from pathlib import Path
 
 ID_PATTERN = r"[0-9]+(?:\.[0-9]+)*"
 ID_RE = re.compile(rf"^{ID_PATTERN}$")
+INDEX_ANNOTATED_RE = re.compile(
+    rf"^({ID_PATTERN}) — "
+    rf"(.*) "
+    rf"(?:\[(draft|verified|settled|obsolete)\]|\[superseded → ({ID_PATTERN})\])$"
+)
 INDEX_RE = re.compile(rf"^({ID_PATTERN}) — (.+)$")
+STATUSES = ("draft", "verified", "settled", "obsolete", "superseded")
 LINK_RE = re.compile(
     rf"^([→←]) ({ID_PATTERN}) "
     r"\((extends|questions|supports|contradicts|analogous)\): (.+)$"
 )
 LINK_KINDS = ("extends", "questions", "supports", "contradicts", "analogous")
 NOTE_FILES = ("zettel.md", "zettel-index.md")
+TRANSITIONS = {
+    ("draft", "verified"),
+    ("verified", "settled"),
+    ("draft", "obsolete"),
+    ("verified", "obsolete"),
+    ("settled", "obsolete"),
+}
+RATIONALE_STATUSES = ("verified", "settled")
 STATE_FILE = ".store-state"
 SKILL_HINT = "see the zettelkasten-notetaking skill for the proper repair procedure"
 GUARD_FILE = "READ-ME-FIRST-use-skill-zettelkasten-notetaking.md"
@@ -58,6 +72,15 @@ class Link:
     target: str
     kind: str
     line: int
+
+
+@dataclass(frozen=True)
+class IndexEntry:
+    id: str
+    title: str
+    line: int
+    status: str
+    successor: str | None
 
 
 @dataclass(frozen=True)
@@ -121,16 +144,29 @@ def parse_cards(text: str, label: str, errors: list[str]) -> list[Card]:
     return cards
 
 
-def parse_index(text: str, label: str, errors: list[str]) -> list[tuple[str, str, int]]:
-    entries: list[tuple[str, str, int]] = []
+def parse_index(text: str, label: str, errors: list[str]) -> list[IndexEntry]:
+    entries: list[IndexEntry] = []
     for line_number, line in enumerate(text.splitlines(), 1):
         if not line.strip():
             continue
-        match = INDEX_RE.fullmatch(line)
+        annotated = INDEX_ANNOTATED_RE.fullmatch(line)
+        match = annotated or INDEX_RE.fullmatch(line)
         if not match:
-            errors.append(f"{label}:{line_number}: expected `ID — Title`")
+            errors.append(f"{label}:{line_number}: expected `ID — Title [status]`")
             continue
-        entries.append((match.group(1), match.group(2), line_number))
+        status, successor = (annotated.group(3), annotated.group(4)) if annotated else (None, None)
+        card_id, title = match.group(1), match.group(2)
+        if successor is not None:
+            status = "superseded"
+        entries.append(
+            IndexEntry(
+                id=card_id,
+                title=title,
+                line=line_number,
+                status=status or "draft",
+                successor=successor,
+            )
+        )
     return entries
 
 
@@ -140,7 +176,7 @@ def validate_text(cards_text: str, index_text: str) -> Validation:
     cards = parse_cards(cards_text, "zettel.md", errors)
     entries = parse_index(index_text, "zettel-index.md", errors)
     card_ids = [card.id for card in cards]
-    index_ids = [entry[0] for entry in entries]
+    index_ids = [entry.id for entry in entries]
 
     for card_id in sorted(duplicates(card_ids)):
         errors.append(f"zettel.md: duplicate card ID {card_id}")
@@ -148,23 +184,28 @@ def validate_text(cards_text: str, index_text: str) -> Validation:
         errors.append(f"zettel-index.md: duplicate index ID {card_id}")
 
     card_by_id = {card.id: card for card in cards}
-    index_by_id = {card_id: (title, line) for card_id, title, line in entries}
+    index_by_id = {entry.id: entry for entry in entries}
     for card in cards:
         indexed = index_by_id.get(card.id)
         if indexed is None:
             errors.append(f"zettel-index.md: card {card.id} is missing from index")
-        elif indexed[0] != card.title:
+        elif indexed.title != card.title:
             errors.append(
-                f"zettel-index.md:{indexed[1]}: title for {card.id} is {indexed[0]!r}, "
+                f"zettel-index.md:{indexed.line}: title for {card.id} is {indexed.title!r}, "
                 f"expected {card.title!r}"
             )
         if "." in card.id:
             parent = card.id.rsplit(".", 1)[0]
             if parent not in card_by_id:
                 errors.append(f"zettel.md:{card.line}: parent {parent} does not exist")
-    for card_id, _title, line in entries:
-        if card_id not in card_by_id:
-            errors.append(f"zettel-index.md:{line}: index ID {card_id} has no card")
+    for entry in entries:
+        if entry.id not in card_by_id:
+            errors.append(f"zettel-index.md:{entry.line}: index ID {entry.id} has no card")
+        if entry.successor is not None and entry.successor not in card_by_id:
+            errors.append(
+                f"zettel-index.md:{entry.line}: successor {entry.successor} "
+                f"of superseded card {entry.id} does not exist"
+            )
 
     for card in cards:
         positions = [
@@ -577,6 +618,89 @@ def add_link(root: Path, source: str, target: str, kind: str, why: str) -> str:
     return f"OK: linked {source} to {target} ({commit_hash})"
 
 
+def set_status(root: Path, card_id: str, status: str, rationale: str | None) -> str:
+    if status not in STATUSES or status in ("draft", "superseded"):
+        raise StoreError(
+            "set-status target must be one of: verified, settled, obsolete "
+            "(draft is implicit; superseded is set by supersede)"
+        )
+    notes, _cards_path, index_path, cards_text, index_text = read_store(root)
+    require_ticket_match(notes, cards_text, index_text)
+    require_valid(cards_text, index_text)
+    entries = parse_index(index_text, "zettel-index.md", [])
+    entry = next((e for e in entries if e.id == card_id), None)
+    if entry is None:
+        raise StoreError(f"card {card_id} is not in the index")
+    if (entry.status, status) not in TRANSITIONS:
+        raise StoreError(f"illegal transition {entry.status} -> {status}")
+    rationale = rationale.strip() if rationale else ""
+    if status in RATIONALE_STATUSES:
+        if not rationale or "\n" in rationale or "\r" in rationale:
+            raise StoreError(
+                f"transition to {status} requires a one-line --rationale "
+                "(recorded in the local commit message)"
+            )
+    lines = index_text.splitlines()
+    lines[entry.line - 1] = f"{card_id} — {entry.title} [{status}]"
+    candidate_index = "\n".join(lines) + "\n"
+    require_valid(cards_text, candidate_index)
+
+    prepare_history(root)
+    index_path.write_text(candidate_index, encoding="utf-8")
+    require_valid(cards_text, index_path.read_text(encoding="utf-8"))
+    message = f"notes: set {card_id} {status}"
+    if rationale:
+        message = f"{message} — {rationale}"
+    commit_hash = commit(notes, message)
+    return f"OK: set {card_id} to {status} ({commit_hash})"
+
+
+def next_available_id(cards: list[Card]) -> str:
+    """The next top-level card ID, matching the expected_id rule for new roots."""
+    tops = [int(card.id) for card in cards if "." not in card.id]
+    return str(max(tops, default=0) + 1)
+
+
+def supersede(root: Path, card_id: str, title: str, body: str, rationale: str | None) -> str:
+    notes, cards_path, index_path, cards_text, index_text = read_store(root)
+    require_ticket_match(notes, cards_text, index_text)
+    require_valid(cards_text, index_text)
+    errors: list[str] = []
+    cards = parse_cards(cards_text, "zettel.md", errors)
+    if errors:
+        raise StoreError("; ".join(errors))
+    if card_id not in {card.id for card in cards}:
+        raise StoreError(f"card {card_id} does not exist")
+    entries = parse_index(index_text, "zettel-index.md", [])
+    entry = next((e for e in entries if e.id == card_id), None)
+    if entry is None:
+        raise StoreError(f"card {card_id} is not in the index")
+    if entry.status == "superseded":
+        raise StoreError(f"card {card_id} is already superseded")
+    title, body = validate_card_content(title, body)
+    successor_id = next_available_id(cards)
+
+    candidate_cards = "\n".join(
+        [*cards_text.splitlines(), *render_card(successor_id, title, body)]
+    ) + "\n"
+    lines = index_text.splitlines()
+    lines[entry.line - 1] = f"{card_id} — {entry.title} [superseded → {successor_id}]"
+    candidate_index = "\n".join([*lines, f"{successor_id} — {title}"]) + "\n"
+    require_valid(candidate_cards, candidate_index)
+
+    prepare_history(root)
+    cards_path.write_text(candidate_cards, encoding="utf-8")
+    index_path.write_text(candidate_index, encoding="utf-8")
+    require_valid(
+        cards_path.read_text(encoding="utf-8"), index_path.read_text(encoding="utf-8")
+    )
+    message = f"notes: supersede {card_id} by {successor_id}"
+    if rationale and rationale.strip():
+        message = f"{message} — {rationale.strip()}"
+    commit_hash = commit(notes, message)
+    return f"OK: superseded {card_id} by {successor_id} ({commit_hash})"
+
+
 def print_validation(root: Path) -> int:
     _notes, _cards, _index, cards_text, index_text = read_store(root)
     result = validate_text(cards_text, index_text)
@@ -619,6 +743,21 @@ def main() -> int:
     add_link_parser.add_argument("--kind", required=True)
     add_link_parser.add_argument("--why", required=True)
 
+    set_status_parser = commands.add_parser("set-status")
+    set_status_parser.add_argument("root")
+    set_status_parser.add_argument("--id", required=True)
+    set_status_parser.add_argument("--status", required=True)
+    set_status_parser.add_argument("--rationale")
+
+    supersede_parser = commands.add_parser("supersede")
+    supersede_parser.add_argument("root")
+    supersede_parser.add_argument("--id", required=True)
+    supersede_parser.add_argument("--title", required=True)
+    body_group = supersede_parser.add_mutually_exclusive_group(required=True)
+    body_group.add_argument("--body")
+    body_group.add_argument("--body-file")
+    supersede_parser.add_argument("--rationale")
+
     hook_parser = commands.add_parser("hook-verify")
     hook_parser.add_argument("root")
     re_ticket_parser = commands.add_parser("re-ticket")
@@ -633,6 +772,10 @@ def main() -> int:
             print(initialize(root))
         elif args.command == "add-card":
             print(add_card(root, args.id, args.title, body_argument(args)))
+        elif args.command == "set-status":
+            print(set_status(root, args.id, args.status, args.rationale))
+        elif args.command == "supersede":
+            print(supersede(root, args.id, args.title, body_argument(args), args.rationale))
         elif args.command == "hook-verify":
             hook_verify(root)
             print("OK: staged note content matches the store state")
