@@ -157,7 +157,7 @@ The substrate in the target repository:
   - a rigid interface cannot meet the need through its existing contract;
   - the specification is ambiguous or a requirement decision is needed;
   - the registry check reports unresolved calls that affect the change.
-- **R26 — Activation.** The skill activates on mentions of the emergent contract coding style, or when the repository's `AGENTS.md` (or equivalent) states that the project uses it, for example: "This project uses emergent contract coding; always use the `emergent-contract-coding` skill for development."
+- **R26 — Activation guard.** The skill MUST NOT become active during ordinary day-to-day development. It activates only when the repository's `AGENTS.md` (or equivalent) contains an explicit opt-in statement, for example: "This project uses emergent contract coding; always use the `emergent-contract-coding` skill for development." Mentions of the style in conversation, issue text, or code do not activate the skill. The skill's description is written so that an agent does not auto-select it: activation requires the `AGENTS.md` statement, nothing else.
 
 ## 4. Script requirements
 
