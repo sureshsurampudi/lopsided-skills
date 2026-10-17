@@ -1,8 +1,11 @@
 # Development Methodology Requirements
 
-Version: 1.4
+Version: 1.5
 
 Status: revised requirements for the `emergent-contract-coding` skill and its supporting scripts. Supersedes v1.3. The previously generated `SKILL.md` is not authoritative and should be regenerated from this document.
+
+Changes from v1.4:
+- The isolated-context walk (R6) is postponed: during the initial trial the walk runs in the writing context. The isolated-context capability (§1.3, item 3) is an optional future optimization, not a requirement of the trial version.
 
 Changes from v1.3, in brief:
 - Interface direction (input/output/internal) is distinct from change authority (rigid/lax); these are independent classifications.
@@ -21,7 +24,7 @@ Changes inherited from v1.3:
 
 1. **A prose skill named `emergent-contract-coding`** that guides an LLM agent through writing and changing code. Each work item runs a write loop: contract walk, write the flow, structure pass. The structure pass keeps call sites consistent and makes the only structural decisions: merge, divorce or leave.
 2. **Deterministic scripts** that generate and check the interface-usage registry and maintain the decision and knowledge logs without drift.
-3. **An isolated-context skill**, specific to each agent environment, that runs a task in a fresh context and returns only its result. For pi, this means running pi as a subprocess with provider and model selection. Other agents define their own. The methodology skill depends on this capability but does not define it.
+3. **An isolated-context skill**, specific to each agent environment, that runs a task in a fresh context and returns only its result. For pi, this means running pi as a subprocess with provider and model selection. Other agents define their own. **Deferred** (product owner decision, 2026-10-17): not part of the initial trial version. The methodology skill may reference this capability but does not require it for the trial; the R6 walk runs in the writing context until this is revived.
 
 The substrate in the target repository:
 - `registry.md`: generated and checked by scripts, never edited by the agent.
@@ -84,7 +87,7 @@ The substrate in the target repository:
 
 ### Write loop
 
-- **R6 — Walk the contracts before writing.** The specification names its input interface and the output interfaces it must reach. Starting from those outputs, walk backwards through the interfaces that lead to them, collecting contracts only, never bodies. The result is the relevant interface set and the call order between those interfaces. Run the walk in an isolated context through the agent's isolated-context skill, so implementation bodies don't enter the writing context. How to compose a route from the set is left to the agent. [14.16.1.3]
+- **R6 — Walk the contracts before writing.** The specification names its input interface and the output interfaces it must reach. Starting from those outputs, walk backwards through the interfaces that lead to them, collecting contracts only, never bodies. The result is the relevant interface set and the call order between those interfaces. The walk runs in the writing context. (Isolated-context execution — running the walk through an isolated-context skill so implementation bodies never enter the writing context — is a postponed optimization, not required for the trial. See §1.3, item 3.) How to compose a route from the set is left to the agent. [14.16.1.3]
 - **R7 — A contract too thin to judge fails loudly.** If a contract does not state enough to judge fit, flag it for repair or deliberately inspect the body, and record which. Never judge suitability from an interface's name. [14.16.1.3, 14.16.1.4]
 - **R8 — Reuse requires whole-contract fit.** Reuse an existing lax interface only when its whole contract fits the need: results, error results and side effects together. Resemblance of names or code is not evidence of fit. When nothing fits, call the output interfaces directly. [14.16.1.6]
 - **R9 — Write one linear function, check-then-act.** Validate everything before the first external call that changes anything. Keep external effects late. Return error outcomes inline. Call other flows only through their interfaces. [14.16.1.12]
