@@ -17,7 +17,12 @@ BOUNDS = "- Work unit: one unit\n- Stop rule: 1 unit per run"
 
 class TestPlanCommands(unittest.TestCase):
     def make_root(self) -> Path:
-        return Path(tempfile.mkdtemp())
+        root = Path(tempfile.mkdtemp())
+        # plan.py archive requires a git repo (archive lands in the common
+        # git dir), so give every test root one.
+        subprocess.run(["git", "init", "-q", str(root)], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return root
 
     def run_plan(self, root: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -280,7 +285,8 @@ class TestPlanCommands(unittest.TestCase):
         done = self.run_plan(root, "archive")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertFalse((root / ".todo").exists())
-        self.assertTrue(list(root.glob(".todo-*.tar.gz")))
+        # the archive lands in the common git dir (worktree-safe), not root
+        self.assertTrue(list((root / ".git").glob(".todo-*.tar.gz")))
 
     def test_archive_treats_cancelled_as_terminal(self) -> None:
         root = self.make_root()
@@ -350,7 +356,12 @@ class TestStdinAlias(unittest.TestCase):
     """'-' as --<key>-file reads stdin; inline '-' stays literal."""
 
     def make_root(self) -> Path:
-        return Path(tempfile.mkdtemp())
+        root = Path(tempfile.mkdtemp())
+        # plan.py archive requires a git repo (archive lands in the common
+        # git dir), so give every test root one.
+        subprocess.run(["git", "init", "-q", str(root)], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return root
 
     def run_plan_input(self, stdin_text: str, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
