@@ -206,6 +206,15 @@ hand-off.
    item ends. These checks are shared with the write loop's step 7 — this
    pass runs them; it does not own them alone.
 
+## Substrate scripts
+
+The contracts CLI lives at `<skill-directory>/scripts/contracts/` (a Python
+package) with a launcher at `<skill-directory>/scripts/contracts-cli.py`.
+Run it as `python3 <skill-directory>/scripts/contracts-cli.py <command>`
+from anywhere, or `python3 -m contracts <command>` from the `scripts/`
+directory. Its tests run with `python3 -m unittest discover contracts/tests`
+from that same directory.
+
 Extensions to step 2:
 
 - **2.a.** IF the `affected` output marks unresolved calls that affect the
