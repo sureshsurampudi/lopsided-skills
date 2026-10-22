@@ -17,6 +17,7 @@ from contracts import config as config_mod
 from contracts import generate as generate_mod
 from contracts.check import check, compare_registries
 from contracts.affected import affected_interfaces, changed_files, render_affected
+from contracts.generate import CallSite
 
 CONFIG = """\
 [source]
@@ -140,9 +141,69 @@ class AffectedTest(_Base):
         self.assertFalse(info.possibly_dead)
         self.assertIn("pkg.api:api_create", render_affected(affected))
 
-    def test_unmodified_files_report_nothing(self):
-        affected = affected_interfaces(self.root, self.registry(), self.cfg(), ["src/pkg/api.py"])
-        self.assertEqual(affected, {})
+    def test_definition_file_edit_lists_all_call_sites(self):
+        """Issue #28: editing the definition file of an interface affects it,
+        reporting all its call sites even though none is in the changed file."""
+        reg = self.registry()
+        affected = affected_interfaces(self.root, reg, self.cfg(), ["src/pkg/api.py"])
+        self.assertIn("pkg.api:api_create", affected)
+        info = affected["pkg.api:api_create"]
+        self.assertEqual(info.call_sites, {CallSite("src/app.py", "run")})
+        self.assertFalse(info.possibly_dead)
+        self.assertIn("src/app.py:run [present]", render_affected(affected))
+
+
+class SiblingSiteBase(AffectedTest):
+    """Issue #28 acceptance fixture: pkg/vat.py defines `vat`, called from
+    pkg/a.py and pkg/b.py."""
+
+    def setUp(self):
+        super().setUp()
+        _write(self.root, "src/pkg/vat.py", "def vat(x):\n    return x\n")
+        _write(self.root, "src/pkg/a.py",
+               "from pkg.vat import vat\n\ndef one():\n    return vat(1)\n")
+        _write(self.root, "src/pkg/b.py",
+               "from pkg.vat import vat\n\ndef two():\n    return vat(2)\n")
+        subprocess.run(["git", "-C", str(self.root), "add", "-A"], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.root), "-c", "user.name=t", "-c", "user.email=t@t",
+             "commit", "-qm", "vat fixture"], check=True)
+
+
+class SiblingSiteTest(SiblingSiteBase):
+    def test_editing_one_caller_lists_both_siblings(self):
+        reg = self.registry()
+        _write(self.root, "src/pkg/b.py",
+               "from pkg.vat import vat\n\ndef two():\n    return vat(3)\n")
+        changed = changed_files(self.root, "HEAD")
+        self.assertEqual(changed, ["src/pkg/b.py"])
+        affected = affected_interfaces(self.root, reg, self.cfg(), changed)
+        self.assertIn("pkg.vat:vat", affected)
+        out = render_affected(affected)
+        self.assertIn("src/pkg/a.py:one [present]", out)
+        self.assertIn("src/pkg/b.py:two [present]", out)
+        self.assertFalse(affected["pkg.vat:vat"].possibly_dead)
+
+    def test_editing_definition_lists_all_call_sites(self):
+        reg = self.registry()
+        _write(self.root, "src/pkg/vat.py", "def vat(x):\n    return x + 1\n")
+        changed = changed_files(self.root, "HEAD")
+        self.assertEqual(changed, ["src/pkg/vat.py"])
+        affected = affected_interfaces(self.root, reg, self.cfg(), changed)
+        self.assertIn("pkg.vat:vat", affected)
+        sites = affected["pkg.vat:vat"].call_sites
+        self.assertEqual(sites, {CallSite("src/pkg/a.py", "one"),
+                                 CallSite("src/pkg/b.py", "two")})
+
+
+class RemovedVatTest(SiblingSiteBase):
+    def test_removing_all_call_sites_flags_possibly_dead(self):
+        reg = self.registry()
+        for rel in ("src/pkg/a.py", "src/pkg/b.py"):
+            _write(self.root, rel, "\n")
+        changed = changed_files(self.root, "HEAD")
+        affected = affected_interfaces(self.root, reg, self.cfg(), changed)
+        self.assertTrue(affected["pkg.vat:vat"].possibly_dead)
 
     def test_removed_call_site_flags_possibly_dead(self):
         reg = self.registry()

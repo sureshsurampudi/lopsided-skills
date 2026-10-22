@@ -57,6 +57,7 @@ class CallSite:
 class Interface:
     direction: str = "internal"
     authority: str = "lax"
+    definition: str | None = None  # repo-relative file defining the interface (None: outside the source trees)
     call_sites: set[CallSite] = field(default_factory=set)
 
 
@@ -204,9 +205,15 @@ def _collect(repo_root: Path, cfg: config_mod.Config):
             unresolved.setdefault(target, UnresolvedTarget()).call_sites |= site.call_sites
         in_tree |= ex_in_tree
 
+    module_files: dict[str, str] = {}
+    for files in claimed.values():
+        for rel, path, base in files:
+            module_files.setdefault(_module_of(base, path), rel)
+
     in_tree = _in_tree_module_prefixes(in_tree)
     for ident, iface in interfaces.items():
         iface.direction, iface.authority = _classify(ident, cfg)
+        iface.definition = module_files.get(ident.split(":")[0])
         if ident.split(":")[0] not in in_tree:
             iface.authority = "rigid"  # S3: outside the source trees defaults to rigid
     return interfaces, unresolved
@@ -326,6 +333,8 @@ def render_registry(interfaces: dict[str, Interface],
             lines.append(f"### {ident}\n")
             lines.append(f"- direction: {iface.direction}")
             lines.append(f"- authority: {iface.authority}")
+            if iface.definition:
+                lines.append(f"- definition: {iface.definition}")
             lines.append("- call sites:")
             for site in sorted(iface.call_sites, key=lambda s: (s.file, s.symbol)):
                 lines.append(f"  - {site.file}:{site.symbol}")
