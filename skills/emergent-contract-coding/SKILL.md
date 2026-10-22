@@ -136,7 +136,9 @@ Execute these steps for the work item's change, after the write loop's step 7
 hand-off.
 
 1. **Regenerate and check the registry.** Run `contracts generate` and
-   `contracts check`. The registry is never hand-edited.
+   `contracts check`. The registry is never hand-edited. When the change
+   reached the tree through a merge, rebase, or cherry-pick, extensions
+   1.a–1.c apply first.
 2. **List the blast radius.** Run `contracts affected --diff HEAD` — every
    affected interface, all its call sites, and interfaces whose call sites
    were removed (flagged for step 8).
@@ -221,6 +223,24 @@ TypeScript sources (`.ts`/`.tsx`) are extracted when tree-sitter is installed
 extensions in the `[source] tree` are skipped. A single `contracts.toml` may
 mix Python and TypeScript directories; interfaces from both extractors are
 merged in one registry.
+
+Extensions to step 1:
+
+- **1.a.** IF the work item's change reached the tree through a merge,
+  rebase, or cherry-pick whose changed paths include the registry; THEN
+  discard any registry conflict markup (either side's version is fine) and
+  run `contracts generate` over the merged tree, capturing the mechanically
+  merged registry aside first (e.g. copied to a temp path) so extension 1.b
+  can diff the regenerated registry against it. The merged registry is
+  never hand-resolved and a mechanically merged registry is never silently
+  accepted — regeneration is the only resolution.
+- **1.b.** IF the regenerated registry differs from the mechanically merged
+  one; THEN surface that diff as a co-change/loss report in this pass's
+  output (merge-time revelation of hidden co-change), never a silent
+  accept.
+- **1.c.** IF `contracts check` or `contracts log check` fails after
+  regeneration; THEN the merge is blocked until resolved within the work
+  item (same rule as extension 9.a).
 
 Extensions to step 2:
 
