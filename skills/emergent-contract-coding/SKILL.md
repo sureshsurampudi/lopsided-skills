@@ -229,7 +229,9 @@ Extensions to step 1:
 - **1.a.** IF the work item's change reached the tree through a merge,
   rebase, or cherry-pick whose changed paths include the registry; THEN
   discard any registry conflict markup (either side's version is fine) and
-  run `contracts generate` over the merged tree. The merged registry is
+  run `contracts generate` over the merged tree, capturing the mechanically
+  merged registry aside first (e.g. copied to a temp path) so extension 1.b
+  can diff the regenerated registry against it. The merged registry is
   never hand-resolved and a mechanically merged registry is never silently
   accepted — regeneration is the only resolution.
 - **1.b.** IF the regenerated registry differs from the mechanically merged
