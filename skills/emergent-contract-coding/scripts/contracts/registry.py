@@ -79,6 +79,9 @@ def parse_registry(text: str) -> Registry:
             if key == "authority" and isinstance(target, Interface):
                 target.authority = value
                 continue
+            if key == "definition" and isinstance(target, Interface):
+                target.definition = value
+                continue
             raise RegistryParseError(f"unexpected list item: {line!r}")
         if line.startswith("  - ") and in_list and target is not None:
             target.call_sites.add(_parse_call_site(line))

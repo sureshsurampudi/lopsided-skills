@@ -1,9 +1,13 @@
 """`contracts affected` — interfaces affected by a diff (S5).
 
 Given a change set (a git ref diffed against the working tree, or a file
-listing changed paths), reports the interfaces whose call sites touch the
-changed files, with a liveness flag: an interface all of whose registered
-call sites no longer exist in the source is "possibly dead".
+listing changed paths), reports the full blast radius: an interface is
+affected when any of its registered call sites is in a changed file, or
+when the changed set includes the file where the interface is defined.
+For each affected interface, all its registered call sites are reported,
+marked present/removed (a site removed from source vs the fresh
+extraction); an interface whose registered call sites are all removed is
+"possibly dead".
 """
 
 from __future__ import annotations
@@ -55,12 +59,11 @@ def changed_files(root: Path, diff: str) -> list[str]:
 
 def affected_interfaces(root: Path, registry_text: str, cfg,
                         changed: list[str]) -> dict[str, AffectedInterface]:
-    """Interfaces with registered call sites in changed files + liveness.
-
-    Liveness compares the on-disk registry with a fresh extraction from
-    source: a call site that no longer appears in the source is removed;
-    an interface whose registered call sites are all removed is possibly
-    dead.
+    """All registered call sites of interfaces affected by the change set,
+    marked present/removed (issue #28): a site removed from source vs the
+    fresh extraction is `removed`; everything else is `present`. Sibling
+    call sites in untouched files are never dropped. An interface whose
+    registered call sites are all removed from source is possibly dead.
     """
     reg = parse_registry(registry_text)
     fresh_interfaces, fresh_unresolved = generate_mod._collect(root, cfg)
@@ -70,14 +73,15 @@ def affected_interfaces(root: Path, registry_text: str, cfg,
     changed_set = set(changed)
     result: dict[str, AffectedInterface] = {}
     for ident, iface in reg.interfaces.items():
-        sites_in_changed = {s for s in iface.call_sites if s.file in changed_set}
-        if not sites_in_changed:
+        def_hit = iface.definition is not None and iface.definition in changed_set
+        site_hit = any(s.file in changed_set for s in iface.call_sites)
+        if not (def_hit or site_hit):
             continue
         info = result.setdefault(ident, AffectedInterface())
-        info.call_sites = sites_in_changed
+        info.call_sites = set(iface.call_sites)
         fresh_sites = fresh_reg.interfaces.get(ident)
         fresh_set = fresh_sites.call_sites if fresh_sites else set()
-        info.removed_sites = sites_in_changed - fresh_set
+        info.removed_sites = info.call_sites - fresh_set
     return result
 
 

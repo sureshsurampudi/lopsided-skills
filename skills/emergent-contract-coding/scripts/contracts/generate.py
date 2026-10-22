@@ -57,6 +57,7 @@ class CallSite:
 class Interface:
     direction: str = "internal"
     authority: str = "lax"
+    definition: str | None = None  # repo-relative file defining the interface (None: outside the source trees)
     call_sites: set[CallSite] = field(default_factory=set)
 
 
@@ -204,9 +205,31 @@ def _collect(repo_root: Path, cfg: config_mod.Config):
             unresolved.setdefault(target, UnresolvedTarget()).call_sites |= site.call_sites
         in_tree |= ex_in_tree
 
+    # A module may be claimed by more than one file (e.g. two source trees both
+    # containing pkg/vat.py). In that case no single file can serve as "the"
+    # definition file, so we refuse to set `definition` and warn instead of
+    # silently pointing at an arbitrary (lexicographically-first) file.
+    module_files: dict[str, list[str]] = {}
+    for files in claimed.values():
+        for rel, path, base in files:
+            module_files.setdefault(_module_of(base, path), []).append(rel)
+    for module, files in module_files.items():
+        if len(files) > 1:
+            print(
+                f"contracts generate: warning: module '{module}' is claimed by "
+                f"multiple files ({', '.join(sorted(files))}); no 'definition' "
+                "is recorded for it",
+                file=sys.stderr,
+            )
+    module_definitions: dict[str, str | None] = {
+        module: (files[0] if len(files) == 1 else None)
+        for module, files in module_files.items()
+    }
+
     in_tree = _in_tree_module_prefixes(in_tree)
     for ident, iface in interfaces.items():
         iface.direction, iface.authority = _classify(ident, cfg)
+        iface.definition = module_definitions.get(ident.split(":")[0])
         if ident.split(":")[0] not in in_tree:
             iface.authority = "rigid"  # S3: outside the source trees defaults to rigid
     return interfaces, unresolved
@@ -326,6 +349,8 @@ def render_registry(interfaces: dict[str, Interface],
             lines.append(f"### {ident}\n")
             lines.append(f"- direction: {iface.direction}")
             lines.append(f"- authority: {iface.authority}")
+            if iface.definition:
+                lines.append(f"- definition: {iface.definition}")
             lines.append("- call sites:")
             for site in sorted(iface.call_sites, key=lambda s: (s.file, s.symbol)):
                 lines.append(f"  - {site.file}:{site.symbol}")

@@ -115,6 +115,33 @@ def g():
         reg = self.generate()
         self.assertIn("## Unresolved\n\n(none)", reg)
 
+    def test_duplicate_module_claims_omit_definition_and_warn(self):
+        # Two source trees both claim pkg.vat; the definition file is ambiguous,
+        # so no `definition` is recorded (previously the lexicographically-first
+        # file was silently selected and shadowed edits were missed).
+        import contextlib
+        import io
+
+        (self.root / "contracts.toml").write_text(
+            CONFIG.replace('tree = ["src"]', 'tree = ["src", "lib"]'),
+            encoding="utf-8",
+        )
+        for tree in ("src", "lib"):
+            _write(self.root, f"{tree}/pkg/__init__.py", "")
+            _write(self.root, f"{tree}/pkg/vat.py", "def vat_check(x):\n    return x\n")
+        _write(
+            self.root,
+            "src/app.py",
+            "from pkg.vat import vat_check\n\ndef run():\n    return vat_check(1)\n",
+        )
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            reg = self.generate()
+        section = reg.split("### pkg.vat:vat_check\n")[1].split("###")[0]
+        self.assertNotIn("- definition:", section)
+        self.assertIn("src/pkg/vat.py", err.getvalue())
+        self.assertIn("lib/pkg/vat.py", err.getvalue())
+
     def test_determinism_two_runs_byte_identical(self):
         _write(self.root, "src/pkg/__init__.py", "")
         _write(self.root, "src/pkg/api.py", """\
