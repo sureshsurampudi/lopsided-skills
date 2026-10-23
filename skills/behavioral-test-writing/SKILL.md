@@ -125,8 +125,10 @@ Emit a report alongside the feature file containing:
 - **Clarification questions** — one numbered question per needs-clarification
   claim with no scenario, phrased so an answer makes the claim shapeable.
   Post these as comments on the work item — the same numbered-question
-  convention story-grooming uses (`Q1`, `Q2`, …), numbered fresh within that
-  item. A claim that cannot be shaped into a scenario is a grooming finding:
+  convention story-grooming uses (`Q1`, `Q2`, …), numbered in continuation:
+  the first question from this skill takes the next free number after the
+  item's highest existing `Qn`, and never renumbers existing questions. A
+  claim that cannot be shaped into a scenario is a grooming finding:
   the loop closes back to story-grooming, not to invention. Never answer the
   clarification question yourself by inventing a bound or failure mode — the
   claim stays unshaped until the work item answers.
@@ -138,8 +140,9 @@ be open at once"*:
 
 1. **Extract:** business rule claim, source = the BVR line.
 2. **Grade:** executable — observable outcome, stated bound.
-3. **Rewrite (falsifiable):** boundary examples 4 / 5 / 6 open items; the 6th
-   attempt must be refused, the 4th and 5th accepted.
+3. **Rewrite (falsifiable):** boundary examples 4 / 5 / 6 open items; with 4
+   already open, opening one more (the 5th) is accepted; with 5 or 6 already
+   open, opening one more is refused.
 4. **Emit:**
 
    ```gherkin
@@ -151,11 +154,12 @@ be open at once"*:
      Examples:
        | open_items | outcome |
        | 4          | opened  |
-       | 5          | opened  |
+       | 5          | refused |
        | 6          | refused |
    ```
 
-   (The 6th attempt is refused because the limit is already reached.)
+   (Opening with 5 already open is the 6th attempt and is refused; with 6
+   already open the limit is violated before the attempt.)
 5. **Report row:** `BR-2 | BVR: open-item limit | executable | scenario
    "At most 5 items open" | 6th open attempt is refused`.
 
