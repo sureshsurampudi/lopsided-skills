@@ -230,6 +230,23 @@ The MR and implementation verdicts follow from the findings, not from judgment:
 | Minor | approve with follow-ups | satisfied |
 | Observation, or none | approve | satisfied |
 
+### Claim coverage blocks the verdict (first review only)
+
+In the first review, the verdict cannot pass while any extracted new claim is unmapped. The presence check's insufficient-testing findings are **blocking**: if any new claim has neither a mapped test/scenario nor an accepted waiver, the MR verdict cannot be approve (or approve with follow-ups) and the implementation verdict cannot be satisfied. The verdict row of the mapping table above is applied only to the remaining findings once no unmapped claim stands in the way.
+
+No new severity class is introduced for this: the unmapped claim is the **insufficient testing** finding class defined in the presence check, and its verdict consequence is this blocking rule.
+
+### Waiver procedure (first review only)
+
+An unmapped claim can be unblocked only by an explicit operator waiver:
+
+1. The reviewer lists the unmapped claims in the review output (the insufficient-testing findings) and stops — the reviewer never grants the waiver.
+2. The operator grants the waiver per claim (or per listed set). The waiver decision is recorded in the review output only — the review records that the waiver was granted, for which `claim-id[/enumeration-id]`, and by whom; it does not modify the reviewed work or its tests.
+3. On the claim record (the behavioral-test-writing traceability report committed next to the feature files), the waived claims are updated to `coverage: review-only`. This is a **warning label, not permission**: it marks the claim as currently evidenced only by review, and a later review that touches the claim's code must treat it as a fresh gap — the waiver never carries over (see the no-waiver-inheritance rule in the presence-check section).
+4. With all listed claims mapped or waived, the verdict is decided by the mapping table above on the remaining findings.
+
+The reviewer's blocking rule and the operator's waiver are deliberately separated: the reviewer blocks; only the operator unblocks.
+
 If the verdict seems wrong for the findings, the severity is what needs revisiting — re-check it against the definitions and the reachability rule, and do not override the verdict.
 
 Section headings and summary lines must match the verdict. The reviewer reports findings and severities; what the author must change is decided by the operator at publication (see the publish-review skill), so do not label findings "required" or "changes required".
