@@ -119,14 +119,16 @@ ask before planning. Otherwise proceed with assumptions stated.
 
 Before decomposition, extract the planned change's behavioral claims from the
 groomed issue only — never from code, so tests cannot freeze behavior instead
-of testing requirements. Read the main success steps, extensions, and business
+of testing requirements. For bugfix plans, the input is the bug report's or
+review findings' corrected-behavior statements, graded the same way. For
+feature plans, read the main success steps, extensions, and business
 rules/BVRs; ignore implementation notes and developer-only commentary.
 
 - Grade each claim: **executable as behavior / needs clarification / not
   behavioral**. A claim that is not executable as behavior is a grooming
   finding — push a clarification question back to the issue.
 - For each executable claim, emit or update its test requirements in the
-  behavior-spec format (per issue #18): a Gherkin feature file under
+  behavior-spec format: a Gherkin feature file under
   `.todo/specs/<work-item>.feature` — main steps → `Scenario`; extensions →
   failure `Scenario`s; BVRs → `Scenario Outline` boundary examples; `Then`
   clauses state observable outcomes only, never internals.
