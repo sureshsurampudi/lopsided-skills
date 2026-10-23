@@ -1,5 +1,6 @@
 # Design decisions
 
+010 — claim-record-location — accepted
 009 — language-extractor-dispatch — accepted
 008 — stdin-placeholder-alias — accepted
 007 — skill-file-shape-instructions-only — accepted
