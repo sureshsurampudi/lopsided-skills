@@ -1,6 +1,6 @@
 # 010 — The persistent claim record is the committed behavioral-test-writing traceability report
 
-**Status:** accepted
+**Status:** accepted (amended 2026-10-23)
 
 ## Context
 
@@ -16,8 +16,11 @@ mechanism without evidence at plan time.
 
 The persistent claim record is the behavioral-test-writing traceability
 report, **committed in the repository next to the emitted feature files**.
-`review-change` reads and updates it by claim-id (read-only lookup for
-detection; the waiver writes `coverage: review-only` to the claim-id row).
+`review-change` performs a **read-only lookup** on it during review, keyed on
+the repo-scoped claim id + enumeration-id (so the id resolves unambiguously
+across the multiple reports a repository may hold). The record is never
+modified during review: the `coverage: review-only` waiver residue is written
+by the **operator after review publication**, not by the reviewer.
 No separate claim-record store is introduced.
 
 ## Consequences
@@ -30,3 +33,9 @@ No separate claim-record store is introduced.
   (2026-10-23): a committed `CLAIM-RECORD.md` with stable claim ids was
   located and updated through the full presence-check → waiver → residue
   path (steps a–d of the trial).
+- Amended 2026-10-23 (PR !37 review R1.F1/R1.F2): mapping key is the
+  repo-scoped claim id + enumeration-id per the extended report schema;
+  review-time access to the record is read-only — the reviewer never writes
+  a claim row, and the `coverage: review-only` waiver write is the
+  operator's post-publication step. The record-location choice itself is
+  unchanged.

@@ -170,11 +170,13 @@ A parallel claim *"the system should feel fast"* grades **not behavioral**
 
 | Column | Content |
 |---|---|
-| Claim id | stable within the run: `SC-n`, `EXT-n`, `BR-n`, `DATA-n`, `GUAR` |
+| Claim id | stable and repo-scoped: feature-file prefix + claim id, e.g. `<feature-file>-SC-n`, `<feature-file>-EXT-n`, `<feature-file>-BR-n`, `<feature-file>-DATA-n`, `<feature-file>-GUAR`. Repo-scoped so the id resolves unambiguously across the multiple reports a repository may hold. |
+| Enumeration-id | the use-case element id the claim was extracted from |
 | Source element | the use-case line the claim came from (quoted or referenced) |
 | Grade | executable / needs clarification / not behavioral |
 | Scenario | scenario name, or "none" + reason |
 | Falsifiable statement | the observable outcome that would fail |
+| Coverage | default empty; set to `review-only` by an operator waiver after review publication |
 
 ## Hard rules
 
