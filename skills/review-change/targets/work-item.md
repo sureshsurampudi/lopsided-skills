@@ -40,6 +40,7 @@ Do not create work-item attributions. In order:
 1. Locate the implementation using work-item code anchors, linked commits, changed paths, and repository search.
 2. Trace relevant execution paths.
 3. Inspect callers, consumers, tests, configuration, migration/rebuild paths, and error handling.
+4. In the **first review** of a change, map every extracted material claim to the claim-suite index (the `behavioral-test-writing` traceability report) during evidence gathering — the input to the presence check (`method.md`, *Claim-test presence check*). In later reviews, read the committed claim record for `coverage: review-only` claims instead.
 4. Do not declare a work item implemented merely because related code exists.
 
 ## Rounds channel

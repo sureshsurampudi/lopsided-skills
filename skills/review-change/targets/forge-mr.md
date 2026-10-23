@@ -30,7 +30,7 @@ A finding belongs to the MR when the changed code, configuration, data, or contr
 1. Read its description, commits, merge base, full changed-file diff, and validation claims.
 2. Read affected callers, tests, docs, configuration, migrations, and scripts.
 3. Determine whether the diff is in scope and whether it changes an established contract.
-4. Identify every material claim made by the MR description or changed documentation and trace it to implementation and validation evidence.
+4. Identify every material claim made by the MR description or changed documentation and trace it to implementation and validation evidence. In the **first review** of a change, map every extracted claim to the claim-suite index (the `behavioral-test-writing` traceability report) during evidence gathering — this is the input to the presence check (`method.md`, *Claim-test presence check*). In later reviews, read the committed claim record for `coverage: review-only` claims instead.
 5. Read the MR's comments for earlier review rounds — see `rounds.md`.
 
 ## Rounds channel
