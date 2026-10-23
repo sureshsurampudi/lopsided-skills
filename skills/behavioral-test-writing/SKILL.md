@@ -188,3 +188,7 @@ A parallel claim *"the system should feel fast"* grades **not behavioral**
   needs-clarification or not-behavioral claim to a step to make coverage look
   complete.
 - **Step definitions are out of scope.** Stop at the feature file and report.
+
+`reference/trial-use-case.md` is the synthesized groomed-input fixture for the
+manual scenario trial of this skill — input to the trial only, not a real
+groomed issue.
