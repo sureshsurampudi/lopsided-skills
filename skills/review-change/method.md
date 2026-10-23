@@ -30,6 +30,14 @@ After extracting claims (step 1 of the primary review objective), and only in th
 
 **No waiver inheritance.** A waiver granted in an earlier review never carries into a later review. If the change modifies code under a claim whose record shows a previous review's waiver (a `coverage: review-only` claim), no waiver is inherited: the operator must either re-decide the waiver for this review or a test must be added now. An unmapped claim is a fresh gap in every review that sees it.
 
+### Locating review-only claims (later reviews)
+
+Read the committed claim record — the `behavioral-test-writing` traceability report stored in the repository next to the feature files it describes. Locate it by searching the diff's touched directories (and their parents) for the report file; never infer coverage from MR prose, commit messages, or test names. Reading the report is a read-only evidence step.
+
+1. For each file the change under review modifies, check whether any claim in the record maps to behavior implemented in that file.
+2. A claim whose record row carries `coverage: review-only` (a waiver from an earlier review) whose code is touched by this change is flagged as an **unverified-behavior change**: the finding class is **insufficient testing**, listing the touched `claim-id[/enumeration-id]`.
+3. No waiver is inherited from the record: the operator must re-decide the waiver for this review or a test must be added now (see the no-waiver-inheritance rule above and the waiver procedure in [Verdict](#verdict)).
+
 When evidence conflicts, surface the conflict explicitly. Do not silently choose the implementation or existing tests as the intended behavior. Prefer explicit acceptance criteria and established external/documented contracts unless the work explicitly changes that contract.
 
 Do not invent findings.
