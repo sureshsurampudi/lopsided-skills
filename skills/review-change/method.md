@@ -16,6 +16,20 @@ After establishing scope:
 
 Passing tests, existing implementation, MR prose, and documentation are evidence, not authority. A test may encode the defect being reviewed.
 
+## Claim-test presence check (first review only)
+
+A green suite is necessary, not sufficient: passing tests without a traceable mapping do not evidence the claims they are supposed to test.
+
+After extracting claims (step 1 of the primary review objective), and only in the **first review** of a change:
+
+1. For each **new claim** extracted — a material claim introduced or changed by the work under review — attempt to map it to a behavioral test case or scenario via the claim-suite index (as produced by the `behavioral-test-writing` skill's traceability report). The mapping key is `claim-id + enumeration-id` (the source use-case element) → test/scenario. A claim is covered only when the index resolves it to a test/scenario that exists in the live suite.
+2. Every new claim with no mapped test/scenario becomes a finding of the finding class **insufficient testing**, listing each unmapped `claim-id[/enumeration-id]`.
+3. The absence of a test does not by itself assign an implementation defect; the finding records the coverage gap. How the gap affects the verdict is defined in [Verdict](#verdict).
+
+**Reconciliation reviews never perform this check.** A reconciliation review keeps its full-suite regression pass — run the accumulated claim suite once per the change under review and report breakage on a mapped claim as a normal finding — but it does not re-derive claim coverage or raise insufficient-testing findings.
+
+**No waiver inheritance.** A waiver granted in an earlier review never carries into a later review. If the change modifies code under a claim whose record shows a previous review's waiver (a `coverage: review-only` claim), no waiver is inherited: the operator must either re-decide the waiver for this review or a test must be added now. An unmapped claim is a fresh gap in every review that sees it.
+
 When evidence conflicts, surface the conflict explicitly. Do not silently choose the implementation or existing tests as the intended behavior. Prefer explicit acceptance criteria and established external/documented contracts unless the work explicitly changes that contract.
 
 Do not invent findings.
