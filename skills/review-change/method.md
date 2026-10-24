@@ -16,6 +16,28 @@ After establishing scope:
 
 Passing tests, existing implementation, MR prose, and documentation are evidence, not authority. A test may encode the defect being reviewed.
 
+## Claim-test presence check (first review only)
+
+A green suite is necessary, not sufficient: passing tests without a traceable mapping do not evidence the claims they are supposed to test.
+
+After extracting claims (step 1 of the primary review objective), and only in the **first review** of a change:
+
+1. For each **new claim** extracted — a material claim introduced or changed by the work under review — attempt to map it to a behavioral test case or scenario via the claim-suite index (as produced by the `behavioral-test-writing` skill's traceability report). The mapping key is the **repo-scoped claim id + enumeration-id** (the source use-case element) → test/scenario, exactly as defined in the report's columns table. The claim id is repo-scoped (feature-file prefix + claim id), so it resolves unambiguously even when a repository holds multiple traceability reports — never match on the bare, run-local claim id alone. A claim is covered only when the index resolves it to a test/scenario that exists in the live suite.
+2. Every new claim with no mapped test/scenario becomes a finding of the finding class **insufficient testing**, listing each unmapped `claim-id[/enumeration-id]`.
+3. The absence of a test does not by itself assign an implementation defect; the finding records the coverage gap. How the gap affects the verdict is defined in [Verdict](#verdict).
+
+**Reconciliation reviews never perform this check.** A reconciliation review keeps its full-suite regression pass — run the accumulated claim suite once per the change under review and report breakage on a mapped claim as a normal finding — but it does not re-derive claim coverage or raise insufficient-testing findings.
+
+**No waiver inheritance.** A waiver granted in an earlier review never carries into a later review. If the change modifies code under a claim whose record shows a previous review's waiver (a `coverage: review-only` claim), no waiver is inherited: the operator must either re-decide the waiver for this review or a test must be added now. An unmapped claim is a fresh gap in every review that sees it.
+
+### Locating review-only claims (later reviews)
+
+Read the committed claim record — the `behavioral-test-writing` traceability report stored in the repository next to the feature files it describes. Locate it by searching the diff's touched directories (and their parents) for the report file; never infer coverage from MR prose, commit messages, or test names. Reading the report is a read-only evidence step.
+
+1. For each file the change under review modifies, check whether any claim in the record maps to behavior implemented in that file.
+2. A claim whose record row carries `coverage: review-only` (a waiver from an earlier review) whose code is touched by this change is flagged as an **unverified-behavior change**: the finding class is **insufficient testing**, listing the touched claim's repo-scoped `claim-id[/enumeration-id]`. Reading the record is read-only — the reviewer never modifies a claim row; the `coverage` field changes only via the operator's post-publication waiver step.
+3. No waiver is inherited from the record: the operator must re-decide the waiver for this review or a test must be added now (see the no-waiver-inheritance rule above and the waiver procedure in [Verdict](#verdict)).
+
 When evidence conflicts, surface the conflict explicitly. Do not silently choose the implementation or existing tests as the intended behavior. Prefer explicit acceptance criteria and established external/documented contracts unless the work explicitly changes that contract.
 
 Do not invent findings.
@@ -215,6 +237,25 @@ The MR and implementation verdicts follow from the findings, not from judgment:
 | Blocking or Important | request changes | not satisfied (Blocking) / partially satisfied (Important) |
 | Minor | approve with follow-ups | satisfied |
 | Observation, or none | approve | satisfied |
+
+### Claim coverage blocks the verdict (first review only)
+
+In the first review, the verdict cannot pass while any extracted new claim is unmapped. The presence check's insufficient-testing findings are **blocking**: if any new claim has neither a mapped test/scenario nor an accepted waiver, the MR verdict cannot be approve (or approve with follow-ups) and the implementation verdict cannot be satisfied. The verdict row of the mapping table above is applied only to the remaining findings once no unmapped claim stands in the way.
+
+No new severity class is introduced for this: the unmapped claim is the **insufficient testing** finding class defined in the presence check, and its verdict consequence is this blocking rule.
+
+The same rule applies in **later reviews** to touched `coverage: review-only` claims (see *Locating review-only claims*): the unverified-behavior-change finding is graded exactly like the first-review rule — **insufficient testing**, no new severity class — and its verdict consequence is **blocking**: the verdict cannot approve (or approve with follow-ups) while the touched review-only claim has neither a fresh waiver re-decided for this review nor a new mapped test. Once no such claim stands in the way, the verdict row of the mapping table above is applied to the remaining findings.
+
+### Waiver procedure (first review only)
+
+An unmapped claim can be unblocked only by an explicit operator waiver:
+
+1. The reviewer lists the unmapped claims in the review output (the insufficient-testing findings) and stops — the reviewer never grants the waiver.
+2. The operator grants the waiver per claim (or per listed set). The waiver decision is recorded in the review output only — the review records that the waiver was granted, for which `claim-id[/enumeration-id]`, and by whom; it does not modify the reviewed work or its tests.
+3. On the claim record (the behavioral-test-writing traceability report committed next to the feature files), **the operator** — never the reviewer — updates the waived claim rows to `coverage: review-only`, **after the review is published**. The write is the operator's post-publication step; the review itself is read-only against the record. This is a **warning label, not permission**: it marks the claim as currently evidenced only by review, and a later review that touches the claim's code must treat it as a fresh gap — the waiver never carries over (see the no-waiver-inheritance rule in the presence-check section).
+4. With all listed claims mapped or waived, the verdict is decided by the mapping table above on the remaining findings.
+
+The reviewer's blocking rule and the operator's waiver are deliberately separated: the reviewer blocks; only the operator unblocks.
 
 If the verdict seems wrong for the findings, the severity is what needs revisiting — re-check it against the definitions and the reachability rule, and do not override the verdict.
 

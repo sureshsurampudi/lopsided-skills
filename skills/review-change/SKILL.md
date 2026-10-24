@@ -32,7 +32,7 @@ Scripts live at `<skill-directory>/scripts/`; never guess a fixed absolute path.
 5. **Check out** — `git fetch`, then `scripts/worktree.sh create <repo> <label> <commit>`. Everything after this happens inside the review worktree.
 6. **Gather evidence** (below and the target file).
 7. **Falsify** — `method.md`, giving the delta since the last round the first pass.
-8. **Grade and decide** — severities with the reachability rule, then the verdict from the mapping table in `method.md`.
+8. **Grade and decide** — severities with the reachability rule, then the verdict from the mapping table in `method.md`. In the first review, claim coverage blocks a passing verdict until every new claim is mapped or waived (`method.md`, *Verdict*).
 9. **Write the report file** — `report-schema.md`.
 10. **Clean up** — `scripts/worktree.sh remove <repo> <path>`, under every outcome including errors. Confirm it reports removed.
 11. **Report in chat** using the profile (default compact), ending with `Full detail: <path>`.

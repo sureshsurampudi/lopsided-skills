@@ -32,6 +32,7 @@ unrelated:
 prior:
   - {id: R1.F1, decision: fix, status: resolved}
   - {id: R1.F2, decision: fix, status: resolved}
+waivers: []                  # operator waivers for unmapped claims (first review only)
 decisions: {}               # filled in by publish-review
 ---
 ```
@@ -52,6 +53,21 @@ In this order, each a `##` heading:
 8. **Verdict** — the verdict and the finding IDs that determined it (`method.md`, *Verdict*).
 
 Frontmatter and body must agree: every finding in the body appears in `findings` with the same ID, severity and summary, and vice versa. `publish-review` refuses a report where they disagree.
+
+## Claim coverage and waivers
+
+First review only (`method.md`, *Claim-test presence check*):
+
+- Every unmapped claim is a finding of the finding class **insufficient testing**: a normal `#### F<n>` block whose summary lists the unmapped `claim-id[/enumeration-id]`, mirrored in the frontmatter `findings` list.
+- Operator waivers for unmapped claims are recorded in the frontmatter `waivers` list:
+
+  ```yaml
+  waivers:
+    - {claim: C3/E2, by: operator, source: chat}
+  ```
+
+  and echoed in the **Verdict** body section together with the finding IDs they unblocked. The waiver lives in the review output only; updating the claim record to `coverage: review-only` is a separate, operator-directed step (see `method.md`, *Waiver procedure*).
+- In the **Requirement traceability** table, a waived claim's status is `unverified`, with `waived; coverage: review-only` in the gap/note column.
 
 ## Chat profiles
 
