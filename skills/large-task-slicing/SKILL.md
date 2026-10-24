@@ -178,9 +178,9 @@ Commands:
 |---|---|
 | `init <root> --name <t> --goal\|--goal-file <g> --bounds\|--bounds-file <b>` | Create `.todo/`, the plan skeleton (guard frontmatter / Goal memory / Bounds / empty Work units), the guard file, `findings.md`, `progress.md`, and the ticket. Refuses if a plan already exists. Any `--*-file` flag accepts `-` to read its text from stdin; the inline form treats `-` as literal text. |
 | `add-unit <root> --label --input --scope --output --verify [--after <id\|frontier>]` | Add a contract unit. New ID (`unit-NNN`, never reused/renumbered), placed at the tail by default, or after `<id>`, or after `frontier` (first open unit). |
-| `complete <root> <unit> --evidence "<verbatim output>"` | Mark done **and** record the evidence. Refuses without evidence and refuses terminal units. |
-| `block <root> <unit> --kind <code\|test\|mechanical\|requirement> --reason <why>` | Mark blocked with a failure classification. |
-| `cancel <root> <unit> --reason <why>` | Abandon an unfinished unit. Text preserved; reason appended. Refuses a done unit. |
+| `complete <unit> <root> --evidence "<verbatim output>"` | Mark done **and** record the evidence. Refuses without evidence and refuses terminal units. |
+| `block <unit> <root> --kind <code\|test\|mechanical\|requirement> --reason <why>` | Mark blocked with a failure classification. |
+| `cancel <unit> <root> --reason <why>` | Abandon an unfinished unit. Text preserved; reason appended. Refuses a done unit. |
 | `status <root>` | The projection to read each loop: current unit + contract, and open/done/blocked/cancelled buckets. |
 | `history <root>` | The provenance trail — every event with its timestamp. |
 | `archive <root>` | Archive and remove `.todo/`. Refuses unless every unit is done or cancelled. |
@@ -320,8 +320,8 @@ For every unit:
 2. **Gather context.** Read only the source context needed for that unit.
 3. **Apply the change.** Smallest change that completes the unit.
 4. **Verify and record.** Run the unit's `verify` command.
-   - Pass → `plan.py complete <root> <unit> --evidence "<verbatim output>"` (marks done and records evidence).
-   - Fail → log the error in `findings.md`, `plan.py block <root> <unit> --kind <code|test|mechanical|requirement> --reason "<why>"`, and stop (error mode).
+   - Pass → `plan.py complete <unit> <root> --evidence "<verbatim output>"` (marks done and records evidence).
+   - Fail → log the error in `findings.md`, `plan.py block <unit> <root> --kind <code|test|mechanical|requirement> --reason "<why>"`, and stop (error mode).
 5. **Log progress.** Append to `progress.md` with action, verification output, and new state.
 6. **Save findings.** If 2+ operations produced new information, append to `findings.md`.
 7. **Amend if needed.** If new knowledge invalidates upcoming work, amend the plan (see Plan Amendments) at this unit boundary.
@@ -358,7 +358,7 @@ command on purpose: provenance is preserved by only ever appending.
 An amendment is **one `cancel` + one `add-unit`**:
 
 1. **Cancel** the now-wrong unit:
-   `plan.py cancel <root> <unit> --reason "<why it died>"` — the original text
+   `plan.py cancel <unit> <root> --reason "<why it died>"` — the original text
    stays visible forever with the reason appended.
 2. **Add** the replacement right after the current step:
    `plan.py add-unit <root> --label ... --after frontier` — a fresh ID placed
