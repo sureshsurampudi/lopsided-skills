@@ -118,8 +118,8 @@ Hard emission rules:
 
 Emit a report alongside the feature file containing:
 
-- **Traceability table** — one row per claim: claim id, source use-case
-  element, grade, scenario (or "none"), falsifiable statement.
+- **Traceability table** — one row per claim, with the columns defined in
+  the *Traceability report columns* table below.
 - **Coverage counts** — executable / needs-clarification / not-behavioral
   totals; scenarios emitted; claims with no scenario.
 - **Clarification questions** — one numbered question per needs-clarification
@@ -160,8 +160,8 @@ be open at once"*:
 
    (Opening with 5 already open is the 6th attempt and is refused; with 6
    already open the limit is violated before the attempt.)
-5. **Report row:** `BR-2 | BVR: open-item limit | executable | scenario
-   "At most 5 items open" | 6th open attempt is refused`.
+5. **Report row:** `<feature-file>-BR-2 | BVR: open-item limit | executable
+   | scenario "At most 5 items open" | 6th open attempt is refused`.
 
 A parallel claim *"the system should feel fast"* grades **not behavioral**
 (no observable condition, no bound) and appears only in the report.
