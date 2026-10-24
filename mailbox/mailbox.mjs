@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Mailbox service CLI (issue #41): persists and correlates request-reply
-// pairs. Surface: register, dispatch, list, show, reply. Delivery to the
-// requester arrives in a later unit — the record shape reserves its slots.
+// pairs. Surface: register, dispatch, list, show, reply, consume, pause,
+// resume, rebind, cancel. Delivery is exactly-once to the registered
+// requester identity, guarded by pause and explicit rebind.
 
 import { StoreError, exists, isPending, list, load, save, storeDir } from "./lib/store.mjs";
 
@@ -18,6 +19,11 @@ Usage:
   mailbox list [--pending]
   mailbox show --id <requestId>
   mailbox reply --id <requestId> --worker <identity> --status <STATUS> [--report <text>]
+  mailbox consume --id <requestId> --requester <identity>
+  mailbox pause --id <requestId>
+  mailbox resume --id <requestId>
+  mailbox rebind --id <requestId> --requester <new-identity>
+  mailbox cancel --id <requestId>
 
 Environment:
   MAILBOX_DIR   store directory (default: ~/.local/share/mailbox)
@@ -79,6 +85,9 @@ async function main(argv) {
         reply: null,
         rejectedReplies: [],
         delivered: false,
+        deliveredAt: null,
+        paused: false,
+        deliveryAttempts: [],
       };
       await save(dir, record);
       console.log(`registered ${requestId} (pending)`);
@@ -135,6 +144,106 @@ async function main(argv) {
       };
       await save(dir, record);
       console.log(`reply recorded for ${requestId} (${opts.status})`);
+      break;
+    }
+    case "consume": {
+      requireOpts(opts, ["id", "requester"]);
+      const requestId = opts.id;
+      const record = await load(dir, requestId);
+      if (!record) fail(STATUS_EXIT.notFound, `no request "${requestId}"`);
+      if (record.state === "cancelled") {
+        fail(STATUS_EXIT.rejected, `request "${requestId}" is cancelled; no delivery`);
+      }
+      const note = (result) => {
+        record.deliveryAttempts.push({ requester: opts.requester, result, at: new Date().toISOString() });
+        return save(dir, record);
+      };
+      if (record.requester !== opts.requester) {
+        // Requester identity change refuses delivery until an explicit rebind
+        // (feature scenario 10); the refusal stays inspectable.
+        await note("refused-identity-change");
+        fail(STATUS_EXIT.rejected, `delivery for "${requestId}" refused: consuming identity "${opts.requester}" does not match the registered requester "${record.requester}"; explicit rebind required`);
+      }
+      if (!record.reply) {
+        await note("no-settled-reply");
+        console.log(`no settled reply for ${requestId}; nothing to consume`);
+        break;
+      }
+      if (record.paused) {
+        // Paused requester holds the reply as inspectable state; no delivery
+        // is attempted while paused (feature scenario 9).
+        await note("held-paused");
+        console.log(`delivery for ${requestId} held: requester is paused (reply stays persisted)`);
+        break;
+      }
+      if (record.delivered) {
+        // Exactly-once consumption: a late re-delivery attempt after
+        // consumption is a no-op (feature scenario 6).
+        console.log(`reply for ${requestId} already delivered; re-delivery is a no-op`);
+        break;
+      }
+      // Delivery to the registered requester identity (feature scenarios 6
+      // and 8): an unreachable requester simply has not consumed yet — the
+      // reply stays persisted and a later consume delivers it.
+      record.delivered = true;
+      record.deliveredAt = new Date().toISOString();
+      await note("delivered");
+      console.log(`delivered reply for ${requestId}: ${record.reply.status}${record.reply.report ? ` — ${record.reply.report}` : ""}`);
+      break;
+    }
+    case "pause": {
+      requireOpts(opts, ["id"]);
+      const record = await load(dir, opts.id);
+      if (!record) fail(STATUS_EXIT.notFound, `no request "${opts.id}"`);
+      if (record.paused) {
+        console.log(`request ${opts.id} already paused (no-op)`);
+        break;
+      }
+      record.paused = true;
+      await save(dir, record);
+      console.log(`paused ${opts.id} (delivery held while paused)`);
+      break;
+    }
+    case "resume": {
+      requireOpts(opts, ["id"]);
+      const record = await load(dir, opts.id);
+      if (!record) fail(STATUS_EXIT.notFound, `no request "${opts.id}"`);
+      if (!record.paused) {
+        console.log(`request ${opts.id} not paused (no-op)`);
+        break;
+      }
+      record.paused = false;
+      await save(dir, record);
+      console.log(`resumed ${opts.id} (delivery may proceed)`);
+      break;
+    }
+    case "rebind": {
+      requireOpts(opts, ["id", "requester"]);
+      const record = await load(dir, opts.id);
+      if (!record) fail(STATUS_EXIT.notFound, `no request "${opts.id}"`);
+      if (record.requester === opts.requester) {
+        console.log(`request ${opts.id} already bound to requester "${opts.requester}" (no-op)`);
+        break;
+      }
+      // Explicit rebind is the only path past the identity-change refusal.
+      record.rebinds ??= [];
+      record.rebinds.push({ from: record.requester, to: opts.requester, at: new Date().toISOString() });
+      record.requester = opts.requester;
+      await save(dir, record);
+      console.log(`rebound ${opts.id} to requester "${opts.requester}"`);
+      break;
+    }
+    case "cancel": {
+      requireOpts(opts, ["id"]);
+      const record = await load(dir, opts.id);
+      if (!record) fail(STATUS_EXIT.notFound, `no request "${opts.id}"`);
+      if (record.state === "cancelled") {
+        console.log(`request ${opts.id} already cancelled (no-op)`);
+        break;
+      }
+      record.state = "cancelled";
+      await save(dir, record);
+      console.log(`cancelled ${opts.id} (no further delivery)`);
       break;
     }
     case "list": {

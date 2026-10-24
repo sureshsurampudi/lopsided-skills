@@ -75,8 +75,9 @@ export async function list(dir, { pendingOnly = false } = {}) {
   return records;
 }
 
-// Pending = a live reply expectation: registered (dispatched or not) and no
-// reply bound. Matches the feature file's "discoverable as pending".
+// Pending = a live reply expectation: registered (dispatched or not), no
+// reply bound, and not cancelled. Matches the feature file's "discoverable
+// as pending".
 export function isPending(record) {
-  return record.reply === null || record.reply === undefined;
+  return (record.reply === null || record.reply === undefined) && record.state !== "cancelled";
 }

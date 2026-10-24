@@ -1,6 +1,8 @@
-// Behavioral tests for mailbox unit-001, mapped to .todo/specs/mailbox-service.feature
-// scenarios 1–2 (register creates expectation before exposure; re-registration
-// rejected) and the pending discoverability claims.
+// Behavioral tests for mailbox unit-001 (scenarios 1–2, pending
+// discoverability), unit-002 (scenarios 3–5, duplicate/worker-identity), and
+// unit-003 (scenarios 6–10: exactly-once consumption, unreachable
+// redelivery, pause hold, requester-identity rebind guard), mapped to
+// .todo/specs/mailbox-service.feature.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -120,6 +122,126 @@ test("non-vocabulary status is rejected", () => {
   const record = JSON.parse(run(dir, "show", "--id", "r1"));
   assert.equal(record.reply, null);
 });
+
+// --- unit-003: delivery ---
+
+test("scenario 6: exactly-once consumption — late re-delivery is a no-op", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir, "dispatch", "--id", "r1");
+  run(dir, "reply", "--id", "r1", "--worker", "w1", "--status", "DONE", "--report", "all done");
+
+  const out = run(dir, "consume", "--id", "r1", "--requester", "q1");
+  assert.match(out, /delivered reply for r1: DONE — all done/);
+
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.delivered, true);
+  assert.ok(record.deliveredAt);
+
+  // late re-delivery attempt after consumption is a no-op
+  const again = run(dir, "consume", "--id", "r1", "--requester", "q1");
+  assert.match(again, /already delivered; re-delivery is a no-op/);
+  const after = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(after.deliveredAt, record.deliveredAt);
+});
+
+test("scenario 8: reply survives an unreachable requester — redelivered later", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir, "dispatch", "--id", "r1");
+  run(dir, "reply", "--id", "r1", "--worker", "w1", "--status", "NEEDS_INPUT", "--report", "question");
+
+  // requester unreachable: no consume happens; the reply stays persisted
+  let record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.reply.status, "NEEDS_INPUT");
+  assert.equal(record.delivered, false);
+
+  // later re-attempt delivers; nothing was lost
+  const out = run(dir, "consume", "--id", "r1", "--requester", "q1");
+  assert.match(out, /delivered reply for r1: NEEDS_INPUT/);
+  record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.delivered, true);
+});
+
+test("scenario 9: paused requester holds the reply as inspectable state", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir, "dispatch", "--id", "r1");
+  run(dir, "reply", "--id", "r1", "--worker", "w1", "--status", "DONE");
+
+  const paused = run(dir, "pause", "--id", "r1");
+  assert.match(paused, /paused r1/);
+
+  const held = run(dir, "consume", "--id", "r1", "--requester", "q1");
+  assert.match(held, /held: requester is paused/);
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  // no delivery while paused; reply remains held and inspectable
+  assert.equal(record.delivered, false);
+  assert.equal(record.reply.status, "DONE");
+  assert.equal(record.paused, true);
+
+  // resume, then delivery proceeds
+  run(dir, "resume", "--id", "r1");
+  assert.match(run(dir, "consume", "--id", "r1", "--requester", "q1"), /delivered reply for r1: DONE/);
+});
+
+test("scenario 10: requester identity change refuses delivery until explicit rebind", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir, "dispatch", "--id", "r1");
+  run(dir, "reply", "--id", "r1", "--worker", "w1", "--status", "DONE");
+
+  // requester session restarted under a new identity
+  const err = runExpectFailure(dir, "consume", "--id", "r1", "--requester", "q2");
+  assert.match(err.stderr, /does not match the registered requester "q1"; explicit rebind required/);
+  let record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.delivered, false);
+  assert.equal(record.deliveryAttempts.at(-1).result, "refused-identity-change");
+
+  // explicit rebind, then delivery proceeds
+  assert.match(run(dir, "rebind", "--id", "r1", "--requester", "q2"), /rebound r1 to requester "q2"/);
+  assert.match(run(dir, "consume", "--id", "r1", "--requester", "q2"), /delivered reply for r1: DONE/);
+  record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.requester, "q2");
+  assert.equal(record.delivered, true);
+  assert.equal(record.rebinds.length, 1);
+  assert.equal(record.rebinds[0].from, "q1");
+});
+
+test("cancel stops delivery and removes the request from pending", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  assert.match(run(dir, "cancel", "--id", "r1"), /cancelled r1/);
+  assert.equal(run(dir, "list", "--pending"), "");
+  const err = runExpectFailure(dir, "consume", "--id", "r1", "--requester", "q1");
+  assert.match(err.stderr, /cancelled; no delivery/);
+});
+
+test("pause is settable by any client and is idempotent", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  // no identity check: any client may pause
+  assert.match(run(dir, "pause", "--id", "r1"), /paused r1/);
+  assert.match(run(dir, "pause", "--id", "r1"), /already paused \(no-op\)/);
+});
+
+test("consume before a reply settles is not an error and records the attempt", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  assert.match(run(dir, "consume", "--id", "r1", "--requester", "q1"), /no settled reply for r1/);
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.deliveryAttempts.at(-1).result, "no-settled-reply");
+});
+
+test("rebind to the same identity is a no-op; consume of unknown id is not-found", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  assert.match(run(dir, "rebind", "--id", "r1", "--requester", "q1"), /already bound/);
+  const err = runExpectFailure(dir, "consume", "--id", "ghost", "--requester", "q1");
+  assert.match(err.stderr, /no request "ghost"/);
+});
+
+// --- store-level pending semantics ---
 
 test("reply to an unknown requestId is not correlated (original requestId only)", () => {
   const dir = makeDir();
