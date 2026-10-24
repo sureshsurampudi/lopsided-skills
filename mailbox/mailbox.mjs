@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Mailbox service CLI (issue #41): persists and correlates request-reply
-// pairs. Unit-001 surface: register, dispatch, list, show. Reply submission
-// and delivery arrive in later units — the record shape reserves their slots.
+// pairs. Surface: register, dispatch, list, show, reply. Delivery to the
+// requester arrives in a later unit — the record shape reserves its slots.
 
 import { StoreError, exists, isPending, list, load, save, storeDir } from "./lib/store.mjs";
+
+export const STATUS_VOCABULARY = ["DONE", "NEEDS_INPUT", "BLOCKED", "FAILED"];
 
 const STATUS_EXIT = { usage: 2, rejected: 3, notFound: 4 };
 
@@ -15,9 +17,12 @@ Usage:
   mailbox dispatch --id <requestId>
   mailbox list [--pending]
   mailbox show --id <requestId>
+  mailbox reply --id <requestId> --worker <identity> --status <STATUS> [--report <text>]
 
 Environment:
-  MAILBOX_DIR   store directory (default: ~/.local/share/mailbox)`;
+  MAILBOX_DIR   store directory (default: ~/.local/share/mailbox)
+
+Status vocabulary: DONE, NEEDS_INPUT, BLOCKED, FAILED`;
 }
 
 function fail(code, message) {
@@ -72,6 +77,7 @@ async function main(argv) {
         registeredAt: new Date().toISOString(),
         dispatchedAt: null,
         reply: null,
+        rejectedReplies: [],
         delivered: false,
       };
       await save(dir, record);
@@ -90,6 +96,45 @@ async function main(argv) {
       record.dispatchedAt = new Date().toISOString();
       await save(dir, record);
       console.log(`dispatched ${opts.id}`);
+      break;
+    }
+    case "reply": {
+      requireOpts(opts, ["id", "worker", "status"]);
+      const requestId = opts.id;
+      const record = await load(dir, requestId);
+      if (!record) fail(STATUS_EXIT.notFound, `no request "${requestId}"`);
+      if (!STATUS_VOCABULARY.includes(opts.status)) {
+        // Reply must use the status vocabulary; non-vocabulary statuses are
+        // rejected before any correlation.
+        fail(STATUS_EXIT.rejected, `status "${opts.status}" is outside the vocabulary (${STATUS_VOCABULARY.join(", ")}); reply rejected`);
+      }
+      if (record.worker !== opts.worker) {
+        // Replaced worker identity cannot bind a reply (feature scenario 5):
+        // the attempt is rejected and kept inspectable on the record; the
+        // request keeps no outcome bound to the new session.
+        record.rejectedReplies.push({
+          worker: opts.worker,
+          status: opts.status,
+          report: opts.report ?? null,
+          rejectedAt: new Date().toISOString(),
+        });
+        await save(dir, record);
+        fail(STATUS_EXIT.rejected, `reply for "${requestId}" rejected: submitting worker "${opts.worker}" does not match the dispatched worker identity "${record.worker}"; attempt recorded`);
+      }
+      if (record.reply) {
+        // Duplicate reply keeps the first — one logical delivery (scenario 4).
+        console.log(`reply for ${requestId} ignored: first reply (${record.reply.status}) already persisted`);
+        break;
+      }
+      // Reply persists against the original requestId only (scenario 3).
+      record.reply = {
+        status: opts.status,
+        report: opts.report ?? null,
+        worker: opts.worker,
+        submittedAt: new Date().toISOString(),
+      };
+      await save(dir, record);
+      console.log(`reply recorded for ${requestId} (${opts.status})`);
       break;
     }
     case "list": {

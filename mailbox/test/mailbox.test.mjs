@@ -62,6 +62,71 @@ test("scenario 2: re-registration with a live expectation is rejected, original 
   assert.equal(record.requester, "q1");
 });
 
+test("scenario 3: reply is persisted against the original request", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir, "dispatch", "--id", "r1");
+  const out = run(dir, "reply", "--id", "r1", "--worker", "w1", "--status", "DONE", "--report", "all done");
+  assert.match(out, /reply recorded for r1 \(DONE\)/);
+
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.reply.status, "DONE");
+  assert.equal(record.reply.report, "all done");
+  assert.equal(record.reply.worker, "w1");
+  assert.ok(record.reply.submittedAt);
+  // no longer pending
+  assert.equal(run(dir, "list", "--pending"), "");
+});
+
+test("scenario 4: duplicate reply keeps the first — one logical delivery", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir, "dispatch", "--id", "r1");
+  run(dir, "reply", "--id", "r1", "--worker", "w1", "--status", "DONE", "--report", "first");
+  const out = run(dir, "reply", "--id", "r1", "--worker", "w1", "--status", "FAILED", "--report", "second");
+  assert.match(out, /ignored: first reply \(DONE\) already persisted/);
+
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.reply.status, "DONE");
+  assert.equal(record.reply.report, "first");
+});
+
+test("scenario 5: replaced worker identity cannot bind a reply; attempt stays inspectable", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir, "dispatch", "--id", "r1");
+  const err = runExpectFailure(dir, "reply", "--id", "r1", "--worker", "w2", "--status", "DONE", "--report", "from impostor");
+  assert.match(err.stderr, /does not match the dispatched worker identity "w1"/);
+
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  // no outcome bound to the new session; rejected reply inspectable
+  assert.equal(record.reply, null);
+  assert.equal(record.rejectedReplies.length, 1);
+  assert.equal(record.rejectedReplies[0].worker, "w2");
+  assert.equal(record.rejectedReplies[0].status, "DONE");
+  assert.equal(record.rejectedReplies[0].report, "from impostor");
+  assert.ok(record.rejectedReplies[0].rejectedAt);
+});
+
+test("non-vocabulary status is rejected", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir, "dispatch", "--id", "r1");
+  for (const status of ["PENDING", "done", "OK"]) {
+    const err = runExpectFailure(dir, "reply", "--id", "r1", "--worker", "w1", "--status", status);
+    assert.match(err.stderr, /outside the vocabulary/);
+  }
+  // nothing bound
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.reply, null);
+});
+
+test("reply to an unknown requestId is not correlated (original requestId only)", () => {
+  const dir = makeDir();
+  const err = runExpectFailure(dir, "reply", "--id", "ghost", "--worker", "w1", "--status", "DONE");
+  assert.match(err.stderr, /no request "ghost"/);
+});
+
 test("dispatch marks the request dispatched; it remains discoverable as pending until a reply", () => {
   const dir = makeDir();
   run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
