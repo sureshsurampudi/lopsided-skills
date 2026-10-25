@@ -136,14 +136,24 @@ rules/BVRs; ignore implementation notes and developer-only commentary.
   the existing scenario, don't duplicate it.
 - Weave the test requirements into the plan: units consume them as verify
   anchors and review later maps against them. Do not copy a claims table into
-  the plan document — the test requirements are the coverage record.
+  the plan document.
+- The scratchpad is planning-only: `.todo/specs/<work-item>.feature` is never
+  committed as a `.feature` file. It is the staging area from which claim
+  blocks are emitted during implementation (see below) — a claim promoted
+  into a committed test's claim block has left the scratchpad for good.
+- A claim that ends up without a test stays in the scratchpad only and is
+  **not durable**: it has no committed record (decision 010, as amended) and
+  is treated as review-scope-only — presence checks do not apply to it.
 
 ### Claim block format (emitted during implementation)
 
 During implementation, for each claim that has a test, emit a **claim block**
 as a comment in the source of the test that verifies the claim. Claims without
 a test are not emitted. The committed test file carrying the claim block is
-the claim's durable record (decision 010, as amended).
+the claim's durable record (decision 010, as amended). The claim block is
+emitted **from the scratchpad** (`.todo/specs/<work-item>.feature`), which
+stays a planning artifact — promotion at implementation time is the only path
+from scratchpad scenario to durable claim record.
 
 A claim block is a contiguous comment block placed **immediately above the
 test's declaration**, written in the test file's line-comment syntax: `#`
@@ -218,8 +228,9 @@ Write each unit as a contract — it is the handoff to a fresh session:
   - verify: <one command>
 ```
 
-`verify` checks the unit's output against an anchor: a claim's test
-requirement from Step 2.5, a regression test
+`verify` checks the unit's output against an anchor: a claim's claim block in
+the committed test carrying it (emitted from the Step 2.5 scratchpad), a
+regression test
 (bugfix), a decision's named check, a corpus invariant, a golden or
 differential diff, or a canary run. Write a new test only when it locks a bug
 or is the named check of a decision. Never write one only so `verify` has
@@ -300,7 +311,8 @@ tracked:
   in the PR body — the merge then closes the issue automatically instead of
   requiring manual closure. Then post
   an **account** comment on the issue covering: the claims the change makes
-  (required behaviour, in the spec's vocabulary); the evidence for each claim
+  (required behaviour, keyed by claim id, located in the committed claim
+  blocks); the evidence for each claim
   (check, test, invariant, inspection — labelled); what remains unverified,
   assumed, or accepted as a risk; and known pre-existing red on the base,
   with issue references. Input: no new red on the branch relative to the base.
