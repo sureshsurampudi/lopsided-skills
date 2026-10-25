@@ -46,7 +46,11 @@ chosen by the clients.
 ```sh
 mailbox register --id r1 --requester q1 --worker w1 --instruction "research X"
                  # creates the reply expectation BEFORE exposure;
-                 # re-registering a live expectation is rejected
+                 # re-registering a live expectation is rejected;
+                 # re-registering a CANCELLED id supersedes it — the old
+                 # record is archived as <id>.cancelled.<ts>.json (its
+                 # rejection history stays inspectable) and a fresh
+                 # expectation is created
 mailbox dispatch --id r1              # mark it dispatched to the worker
 mailbox reply --id r1 --worker w1 --status DONE --report "..."
 mailbox consume --id r1 --requester q1  # exactly-once delivery of the reply

@@ -135,7 +135,10 @@ export async function list(dir, { pendingOnly = false } = {}) {
   const records = [];
   const damaged = [];
   for (const name of names) {
-    if (!name.endsWith(".json")) continue;
+    // Only exact <name>.json record files participate in discovery;
+    // archived superseded records (<id>.cancelled.<ts>.json, R3.F4), lock
+    // files, and tmp files are not live expectations.
+    if (!/^[A-Za-z0-9._-]+\.json$/.test(name) || name.includes(".cancelled.")) continue;
     let record;
     try {
       record = JSON.parse(await fs.promises.readFile(path.join(dir, name), "utf8"));

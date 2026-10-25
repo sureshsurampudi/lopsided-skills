@@ -440,6 +440,33 @@ test("R1.F1 regression: registration after cancel supersedes the cancelled recor
   assert.equal(JSON.parse(run(dir, "show", "--id", "r1")).instruction, "second");
 });
 
+test("R3.F4 regression: re-registration archives the cancelled record with its history", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir, "cancel", "--id", "r1");
+  // a late reply is rejected and recorded on the cancelled record
+  runExpectFailure(dir, "reply", "--id", "r1", "--worker", "w1", "--status", "DONE", "--report", "late");
+
+  run(dir, "register", "--id", "r1", "--requester", "q2", "--worker", "w2", "--instruction", "fresh");
+
+  // fresh record has no inherited history
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.rejectedReplies.length, 0);
+  assert.equal(record.state, "pending");
+
+  // the superseded cancelled record is archived, inspectable, history intact
+  const archives = fs.readdirSync(dir).filter((n) => /^r1\.cancelled\..+\.json$/.test(n));
+  assert.equal(archives.length, 1);
+  const archived = JSON.parse(fs.readFileSync(path.join(dir, archives[0]), "utf8"));
+  assert.equal(archived.state, "cancelled");
+  assert.equal(archived.rejectedReplies.length, 1);
+  assert.equal(archived.rejectedReplies[0].report, "late");
+
+  // archives are not live expectations: not listed, not showable by id
+  assert.equal(JSON.parse(run(dir, "show", "--id", "r1")).requestId, "r1");
+  assert.equal(run(dir, "list").split("\n").filter(Boolean).length, 1);
+});
+
 test("cancel stops delivery and removes the request from pending", () => {
   const dir = makeDir();
   run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");

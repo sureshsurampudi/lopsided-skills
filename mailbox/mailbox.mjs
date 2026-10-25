@@ -4,7 +4,8 @@
 // resume, rebind, cancel. Delivery is exactly-once to the registered
 // requester identity, guarded by pause and explicit rebind.
 
-import { rm } from "node:fs/promises";
+import { rename } from "node:fs/promises";
+import path from "node:path";
 import { StoreError, isPending, list, load, recordPath, save, storeDir, withLock } from "./lib/store.mjs";
 
 export const STATUS_VOCABULARY = ["DONE", "NEEDS_INPUT", "BLOCKED", "FAILED"];
@@ -129,8 +130,11 @@ async function main(argv) {
         }
         if (existing) {
           // A cancelled record has no live expectation (R1.F1, operator
-          // amendment): registration supersedes it with a fresh record.
-          await rm(recordPath(dir, requestId));
+          // amendment): registration supersedes it with a fresh record. The
+          // superseded record is archived, not deleted (R3.F4): its rejection
+          // history stays inspectable as <id>.cancelled.<ts>.json.
+          const ts = new Date().toISOString().replace(/[:.]/g, "-");
+          await rename(recordPath(dir, requestId), path.join(dir, `${requestId}.cancelled.${ts}.json`));
         }
         const record = {
           requestId,
