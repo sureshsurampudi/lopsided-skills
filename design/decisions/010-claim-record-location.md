@@ -38,8 +38,9 @@ No separate claim-record store is introduced.
 ## Consequences
 
 - Later reviews detect unverified-behavior changes by reading the committed
-  record next to the feature files; no extra tooling or index.
-- If a domain has no committed traceability report, every new claim is
+  claim record — since the 2026-10-25 amendment, the claim blocks in the
+  committed test files; no extra tooling or index.
+- If a domain has no committed claim record, every new claim is
   treated as unmapped — the presence check applies with no special case.
 - The assumption was validated by the issue #31 manual scenario trial
   (2026-10-23): a committed `CLAIM-RECORD.md` with stable claim ids was

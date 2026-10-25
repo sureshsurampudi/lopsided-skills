@@ -176,7 +176,7 @@ A parallel claim *"the system should feel fast"* grades **not behavioral**
 | Grade | executable / needs clarification / not behavioral |
 | Scenario | scenario name, or "none" + reason |
 | Falsifiable statement | the observable outcome that would fail |
-| Coverage | default empty; set to `review-only` by an operator waiver after review publication |
+| Coverage | default empty; set to `review-only` by an operator waiver after review publication. Since decision 010 as amended (2026-10-25), the durable waiver residue lives on the claim block in the committed test carrying the claim; this column records the waiver state in the report only — it is not the durable residue location |
 
 ## Hard rules
 
