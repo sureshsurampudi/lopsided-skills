@@ -21,6 +21,8 @@ function recordPath(dir, requestId) {
   return path.join(dir, `${requestId}.json`);
 }
 
+export { recordPath };
+
 export async function load(dir, requestId) {
   let raw;
   try {

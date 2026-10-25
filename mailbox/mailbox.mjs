@@ -4,7 +4,8 @@
 // resume, rebind, cancel. Delivery is exactly-once to the registered
 // requester identity, guarded by pause and explicit rebind.
 
-import { StoreError, exists, isPending, list, load, save, storeDir } from "./lib/store.mjs";
+import { rm } from "node:fs/promises";
+import { StoreError, exists, isPending, list, load, recordPath, save, storeDir } from "./lib/store.mjs";
 
 export const STATUS_VOCABULARY = ["DONE", "NEEDS_INPUT", "BLOCKED", "FAILED"];
 
@@ -70,9 +71,16 @@ async function main(argv) {
       requireOpts(opts, ["id", "requester", "worker", "instruction"]);
       const requestId = opts.id;
       if (await exists(dir, requestId)) {
-        // Re-registration with a live expectation is rejected; the original
-        // request is left unchanged (feature scenario 2).
-        fail(STATUS_EXIT.rejected, `request "${requestId}" already has a live expectation; registration rejected, original unchanged`);
+        const existing = await load(dir, requestId);
+        if (existing.state === "cancelled") {
+          // A cancelled record has no live expectation (R1.F1, operator
+          // amendment): registration supersedes it with a fresh record.
+          await rm(recordPath(dir, requestId));
+        } else {
+          // Re-registration with a live expectation is rejected; the original
+          // request is left unchanged (feature scenario 2).
+          fail(STATUS_EXIT.rejected, `request "${requestId}" already has a live expectation; registration rejected, original unchanged`);
+        }
       }
       const record = {
         requestId,

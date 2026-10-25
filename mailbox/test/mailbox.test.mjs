@@ -208,6 +208,31 @@ test("scenario 10: requester identity change refuses delivery until explicit reb
   assert.equal(record.rebinds[0].from, "q1");
 });
 
+test("R1.F1 regression: registration after cancel supersedes the cancelled record", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "first");
+  run(dir, "cancel", "--id", "r1");
+
+  // re-registration after cancel succeeds with the new parameters
+  const out = run(dir, "register", "--id", "r1", "--requester", "q2", "--worker", "w2", "--instruction", "second");
+  assert.match(out, /registered r1 \(pending\)/);
+
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.requester, "q2");
+  assert.equal(record.worker, "w2");
+  assert.equal(record.instruction, "second");
+  assert.equal(record.state, "pending");
+  assert.equal(record.reply, null);
+  // fresh record: cancelled history does not leak into the new expectation
+  assert.equal(record.paused, false);
+  assert.equal(record.delivered, false);
+
+  // a live (non-cancelled) expectation is still rejected, original unchanged
+  const err = runExpectFailure(dir, "register", "--id", "r1", "--requester", "q3", "--worker", "w3", "--instruction", "third");
+  assert.match(err.stderr, /already has a live expectation/);
+  assert.equal(JSON.parse(run(dir, "show", "--id", "r1")).instruction, "second");
+});
+
 test("cancel stops delivery and removes the request from pending", () => {
   const dir = makeDir();
   run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
