@@ -120,6 +120,18 @@ async function main(argv) {
       const requestId = opts.id;
       const record = await load(dir, requestId);
       if (!record) fail(STATUS_EXIT.notFound, `no request "${requestId}"`);
+      if (record.state === "cancelled") {
+        // A cancelled expectation never binds an outcome (R1.F2): the attempt
+        // is rejected and kept inspectable, like the worker-identity guard.
+        record.rejectedReplies.push({
+          worker: opts.worker,
+          status: opts.status,
+          report: opts.report ?? null,
+          rejectedAt: new Date().toISOString(),
+        });
+        await save(dir, record);
+        fail(STATUS_EXIT.rejected, `reply for "${requestId}" rejected: the request is cancelled; no outcome can bind (attempt recorded)`);
+      }
       if (!STATUS_VOCABULARY.includes(opts.status)) {
         // Reply must use the status vocabulary; non-vocabulary statuses are
         // rejected before any correlation.

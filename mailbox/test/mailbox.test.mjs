@@ -110,6 +110,24 @@ test("scenario 5: replaced worker identity cannot bind a reply; attempt stays in
   assert.ok(record.rejectedReplies[0].rejectedAt);
 });
 
+test("R1.F2 regression: reply to a cancelled request is rejected, attempt inspectable", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir, "cancel", "--id", "r1");
+
+  const err = runExpectFailure(dir, "reply", "--id", "r1", "--worker", "w1", "--status", "DONE", "--report", "late reply");
+  assert.match(err.stderr, /the request is cancelled; no outcome can bind/);
+
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  // no outcome bound on the cancelled expectation; attempt stays inspectable
+  assert.equal(record.reply, null);
+  assert.equal(record.rejectedReplies.length, 1);
+  assert.equal(record.rejectedReplies[0].worker, "w1");
+  assert.equal(record.rejectedReplies[0].status, "DONE");
+  assert.equal(record.rejectedReplies[0].report, "late reply");
+  assert.ok(record.rejectedReplies[0].rejectedAt);
+});
+
 test("non-vocabulary status is rejected", () => {
   const dir = makeDir();
   run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
