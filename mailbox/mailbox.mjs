@@ -46,9 +46,20 @@ function parseArgs(argv) {
       positional.push(arg);
       continue;
     }
+    if (arg === "--") { positional.push(...argv.slice(i + 1)); break; }
     if (arg === "--pending") { opts.pending = true; continue; }
+    // --opt=value form: the value is taken unconditionally, so it may start
+    // with '--' (R1.F4 removed the undocumented input-space restriction).
+    const eq = arg.indexOf("=");
+    if (eq !== -1) {
+      opts[arg.slice(2, eq)] = arg.slice(eq + 1);
+      continue;
+    }
+    // Space-separated form: the next token is consumed as the value
+    // positionally — it may itself begin with '--'. Only a missing value
+    // (end of argv) is a usage error.
     const value = argv[++i];
-    if (value === undefined || value.startsWith("--")) fail(STATUS_EXIT.usage, `${arg} requires a value`);
+    if (value === undefined) fail(STATUS_EXIT.usage, `${arg} requires a value`);
     opts[arg.slice(2)] = value;
   }
   return { opts, positional };

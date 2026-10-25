@@ -310,6 +310,25 @@ test("dispatch of an unknown request fails with not-found", () => {
   assert.match(err.stderr, /no request "missing"/);
 });
 
+test("R1.F4 regression: option values may start with --; missing value still usage", () => {
+  const dir = makeDir();
+  // space-separated form consumes the next token positionally, even if it
+  // starts with '--'
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "--weird flag-like text");
+  let record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.instruction, "--weird flag-like text");
+
+  // --opt=value form as the unambiguous alternative
+  run(dir, "register", "--id=r2", "--requester=q1", "--worker=w1", "--instruction=--second --text");
+  record = JSON.parse(run(dir, "show", "--id", "r2"));
+  assert.equal(record.instruction, "--second --text");
+
+  // a bare flag at the end of argv is still a usage error (exit 2)
+  const err = runExpectFailure(dir, "register", "--id", "r3", "--requester", "q1", "--worker", "w1", "--instruction");
+  assert.match(err.stderr, /--instruction requires a value/);
+  assert.equal(err.status, 2);
+});
+
 test("R1.F3 regression: corrupt store file does not wedge discovery or crash the CLI", () => {
   const dir = makeDir();
   run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
