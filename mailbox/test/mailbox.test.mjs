@@ -13,11 +13,36 @@ import path from "node:path";
 
 const CLI = new URL("../mailbox.mjs", import.meta.url).pathname;
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileP = promisify(execFile);
+
 function run(dir, ...args) {
   return execFileSync(process.execPath, [CLI, ...args], {
     env: { ...process.env, MAILBOX_DIR: dir },
     encoding: "utf8",
   });
+}
+
+// Spawn several CLI invocations as real concurrent child processes (R2.F1's
+// interleavings cannot be exercised with sequential calls).
+async function runConcurrent(dir, ...cmds) {
+  return Promise.all(
+    cmds.map((args) =>
+      execFileP(process.execPath, [CLI, ...args], {
+        env: { ...process.env, MAILBOX_DIR: dir },
+        encoding: "utf8",
+        maxBuffer: 1024 * 1024,
+      })
+        .then(({ stdout }) => ({ code: 0, stdout }))
+        .catch((err) => ({ code: err.code ?? 1, stdout: err.stdout ?? "", stderr: err.stderr ?? "" }))
+    )
+  );
+}
+
+function assertWithinVocabulary(code, context) {
+  assert.ok([0, 2, 3, 4].includes(code), `${context}: exit ${code} outside 0/2/3/4`);
 }
 
 function runExpectFailure(dir, ...args) {
@@ -33,6 +58,105 @@ function runExpectFailure(dir, ...args) {
 function makeDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "mailbox-test-"));
 }
+
+// --- R2.F1: concurrency (real concurrent processes) ---
+
+async function concurrencyProbes(dir) {
+  const results = {};
+  for (const [name, setup, cmds] of [
+    ["consume-vs-reply",
+      (d) => {
+        run(d, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+        run(d, "dispatch", "--id", "r1");
+      },
+      () => [
+        ["consume", "--id", "r1", "--requester", "q1"],
+        ["reply", "--id", "r1", "--worker", "w1", "--status", "DONE", "--report", "x"],
+        ["consume", "--id", "r1", "--requester", "q1"],
+        ["consume", "--id", "r1", "--requester", "q1"],
+      ]],
+    ["consume-race",
+      (d) => {
+        run(d, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+        run(d, "dispatch", "--id", "r1");
+        run(d, "reply", "--id", "r1", "--worker", "w1", "--status", "DONE");
+      },
+      () => [
+        ["consume", "--id", "r1", "--requester", "q1"],
+        ["consume", "--id", "r1", "--requester", "q1"],
+        ["consume", "--id", "r1", "--requester", "q1"],
+        ["consume", "--id", "r1", "--requester", "q1"],
+      ]],
+    ["register-race",
+      () => {},
+      () => [
+        ["register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "one"],
+        ["register", "--id", "r1", "--requester", "q2", "--worker", "w2", "--instruction", "two"],
+        ["register", "--id", "r1", "--requester", "q3", "--worker", "w3", "--instruction", "three"],
+      ]],
+    ["reply-vs-cancel",
+      (d) => {
+        run(d, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+        run(d, "dispatch", "--id", "r1");
+      },
+      () => [
+        ["reply", "--id", "r1", "--worker", "w1", "--status", "DONE"],
+        ["cancel", "--id", "r1"],
+      ]],
+  ]) {
+    const d = makeDir();
+    setup(d);
+    results[name] = { outcomes: await runConcurrent(d, ...cmds()), dir: d };
+  }
+  return results;
+}
+
+test("R2.F1 regression: concurrent consume polling cannot erase a reply", async () => {
+  const { outcomes, dir } = (await concurrencyProbes(makeDir()))["consume-vs-reply"];
+  for (const o of outcomes) assertWithinVocabulary(o.code, "consume-vs-reply");
+  // the reply, if acknowledged, is never erased — and survives in the store
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  const acknowledged = outcomes.some((o) => /reply recorded/.test(o.stdout));
+  assert.ok(record.reply !== null || !acknowledged, "an acknowledged reply was erased");
+  // record reflects a serialized state, not a partial overwrite
+  assert.ok(record.reply === null || record.reply.status === "DONE");
+});
+
+test("R2.F1 regression: concurrent consumes — at most one delivery acknowledged", async () => {
+  const { outcomes, dir } = (await concurrencyProbes(makeDir()))["consume-race"];
+  for (const o of outcomes) assertWithinVocabulary(o.code, "consume-race");
+  const delivered = outcomes.filter((o) => /delivered reply for r1/.test(o.stdout)).length;
+  assert.ok(delivered >= 1, "the settled reply was never delivered");
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.delivered, true);
+  assert.equal(record.reply.status, "DONE");
+  // the delivered mark is set exactly once in the persisted attempt log
+  assert.equal(record.deliveryAttempts.filter((a) => a.result === "delivered").length, 1);
+});
+
+test("R2.F1 regression: concurrent registrations — at most one live expectation", async () => {
+  const { outcomes, dir } = (await concurrencyProbes(makeDir()))["register-race"];
+  for (const o of outcomes) assertWithinVocabulary(o.code, "register-race");
+  const registered = outcomes.filter((o) => /registered r1/.test(o.stdout));
+  assert.ok(registered.length <= 1, `expected at most one successful registration, got ${registered.length}`);
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  // the stored record matches exactly one of the attempted registrations
+  assert.ok(["q1", "q2", "q3"].includes(record.requester));
+  assert.equal(registered.length, 1); // someone must win; none silently overwritten
+});
+
+test("R2.F1 regression: concurrent reply and cancel — no acknowledged effect lost", async () => {
+  const { outcomes, dir } = (await concurrencyProbes(makeDir()))["reply-vs-cancel"];
+  for (const o of outcomes) assertWithinVocabulary(o.code, "reply-vs-cancel");
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  // each acknowledged command's effect is present in the store
+  if (outcomes.some((o) => /reply recorded/.test(o.stdout))) {
+    assert.ok(record.reply !== null, "an acknowledged reply vanished");
+  }
+  if (outcomes.some((o) => /cancelled r1/.test(o.stdout))) {
+    assert.equal(record.state, "cancelled");
+  }
+});
 
 test("scenario 1: register creates a reply expectation before exposure", () => {
   const dir = makeDir();
@@ -268,12 +392,16 @@ test("pause is settable by any client and is idempotent", () => {
   assert.match(run(dir, "pause", "--id", "r1"), /already paused \(no-op\)/);
 });
 
-test("consume before a reply settles is not an error and records the attempt", () => {
+test("consume before a reply settles is not an error and does not write the record", () => {
   const dir = makeDir();
   run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
   assert.match(run(dir, "consume", "--id", "r1", "--requester", "q1"), /no settled reply for r1/);
   const record = JSON.parse(run(dir, "show", "--id", "r1"));
-  assert.equal(record.deliveryAttempts.at(-1).result, "no-settled-reply");
+  // R2.F1: this path no longer persists the attempt — the write that made the
+  // erase race possible; the outcome is reported on stdout only.
+  assert.equal(record.deliveryAttempts.length, 0);
+  assert.equal(record.delivered, false);
+  assert.equal(record.reply, null);
 });
 
 test("rebind to the same identity is a no-op; consume of unknown id is not-found", () => {

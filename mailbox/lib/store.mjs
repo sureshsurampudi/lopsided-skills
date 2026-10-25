@@ -28,6 +28,48 @@ function recordPath(dir, requestId) {
 
 export { recordPath };
 
+const LOCK_POLL_MS = 25;
+const LOCK_WAIT_MS = 5000;
+const LOCK_STALE_MS = 10000; // operations are ms-scale; a holder that lives
+// longer than this (crash) lets the next contender steal the lock.
+
+// Serialize a per-request read-modify-write (R2.F1): the lock file is created
+// exclusively (open wx), retried with backoff, stolen when stale, and always
+// released in finally — including when the body exits via a thrown error.
+export async function withLock(dir, requestId, body) {
+  const lockPath = `${recordPath(dir, requestId)}.lock`;
+  await fs.promises.mkdir(dir, { recursive: true });
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    let handle;
+    try {
+      handle = await fs.promises.open(lockPath, "wx");
+    } catch (err) {
+      if (err.code !== "EEXIST") {
+        throw new StoreError(`cannot lock request "${requestId}": ${err.message}`, { exit: 3 });
+      }
+      try {
+        const st = await fs.promises.stat(lockPath);
+        if (Date.now() - st.mtimeMs > LOCK_STALE_MS) {
+          await fs.promises.rm(lockPath).catch(() => {});
+          continue;
+        }
+      } catch { /* lock vanished between EEXIST and stat — retry */ }
+      if (Date.now() > deadline) {
+        throw new StoreError(`request "${requestId}" is busy (lock held); retry later`, { exit: 3 });
+      }
+      await new Promise((r) => setTimeout(r, LOCK_POLL_MS));
+      continue;
+    }
+    try {
+      return await body();
+    } finally {
+      await handle.close().catch(() => {});
+      await fs.promises.rm(lockPath).catch(() => {});
+    }
+  }
+}
+
 export async function load(dir, requestId) {
   let raw;
   try {

@@ -5,11 +5,21 @@
 // requester identity, guarded by pause and explicit rebind.
 
 import { rm } from "node:fs/promises";
-import { StoreError, exists, isPending, list, load, recordPath, save, storeDir } from "./lib/store.mjs";
+import { StoreError, isPending, list, load, recordPath, save, storeDir, withLock } from "./lib/store.mjs";
 
 export const STATUS_VOCABULARY = ["DONE", "NEEDS_INPUT", "BLOCKED", "FAILED"];
 
 const STATUS_EXIT = { usage: 2, rejected: 3, notFound: 4 };
+
+// A failure raised inside a locked command body: the lock's finally clause
+// runs before main's catch maps it to stderr + exit (process.exit inside the
+// body would skip the release).
+class CommandExit extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
 
 function usage() {
   return `mailbox — persist and correlate request-reply pairs (same host, same OS user)
@@ -81,200 +91,217 @@ async function main(argv) {
     case "register": {
       requireOpts(opts, ["id", "requester", "worker", "instruction"]);
       const requestId = opts.id;
-      if (await exists(dir, requestId)) {
+      await withLock(dir, requestId, async () => {
         const existing = await load(dir, requestId);
-        if (existing.state === "cancelled") {
+        if (existing && existing.state !== "cancelled") {
+          // Re-registration with a live expectation is rejected; the original
+          // request is left unchanged (feature scenario 2).
+          throw new CommandExit(STATUS_EXIT.rejected, `request "${requestId}" already has a live expectation; registration rejected, original unchanged`);
+        }
+        if (existing) {
           // A cancelled record has no live expectation (R1.F1, operator
           // amendment): registration supersedes it with a fresh record.
           await rm(recordPath(dir, requestId));
-        } else {
-          // Re-registration with a live expectation is rejected; the original
-          // request is left unchanged (feature scenario 2).
-          fail(STATUS_EXIT.rejected, `request "${requestId}" already has a live expectation; registration rejected, original unchanged`);
         }
-      }
-      const record = {
-        requestId,
-        requester: opts.requester,
-        worker: opts.worker,
-        instruction: opts.instruction,
-        state: "pending", // pending | dispatched
-        registeredAt: new Date().toISOString(),
-        dispatchedAt: null,
-        reply: null,
-        rejectedReplies: [],
-        delivered: false,
-        deliveredAt: null,
-        paused: false,
-        deliveryAttempts: [],
-      };
-      await save(dir, record);
-      console.log(`registered ${requestId} (pending)`);
+        const record = {
+          requestId,
+          requester: opts.requester,
+          worker: opts.worker,
+          instruction: opts.instruction,
+          state: "pending", // pending | dispatched
+          registeredAt: new Date().toISOString(),
+          dispatchedAt: null,
+          reply: null,
+          rejectedReplies: [],
+          delivered: false,
+          deliveredAt: null,
+          paused: false,
+          deliveryAttempts: [],
+        };
+        await save(dir, record);
+        console.log(`registered ${requestId} (pending)`);
+      });
       break;
     }
     case "dispatch": {
       requireOpts(opts, ["id"]);
-      const record = await load(dir, opts.id);
-      if (!record) fail(STATUS_EXIT.notFound, `no request "${opts.id}"`);
-      if (record.state === "dispatched") {
-        console.log(`dispatched ${opts.id} (already dispatched; no-op)`);
-        break;
-      }
-      record.state = "dispatched";
-      record.dispatchedAt = new Date().toISOString();
-      await save(dir, record);
-      console.log(`dispatched ${opts.id}`);
+      await withLock(dir, opts.id, async () => {
+        const record = await load(dir, opts.id);
+        if (!record) throw new CommandExit(STATUS_EXIT.notFound, `no request "${opts.id}"`);
+        if (record.state === "dispatched") {
+          console.log(`dispatched ${opts.id} (already dispatched; no-op)`);
+          return;
+        }
+        record.state = "dispatched";
+        record.dispatchedAt = new Date().toISOString();
+        await save(dir, record);
+        console.log(`dispatched ${opts.id}`);
+      });
       break;
     }
     case "reply": {
       requireOpts(opts, ["id", "worker", "status"]);
       const requestId = opts.id;
-      const record = await load(dir, requestId);
-      if (!record) fail(STATUS_EXIT.notFound, `no request "${requestId}"`);
-      if (record.state === "cancelled") {
-        // A cancelled expectation never binds an outcome (R1.F2): the attempt
-        // is rejected and kept inspectable, like the worker-identity guard.
-        record.rejectedReplies.push({
-          worker: opts.worker,
-          status: opts.status,
-          report: opts.report ?? null,
-          rejectedAt: new Date().toISOString(),
-        });
-        await save(dir, record);
-        fail(STATUS_EXIT.rejected, `reply for "${requestId}" rejected: the request is cancelled; no outcome can bind (attempt recorded)`);
-      }
       if (!STATUS_VOCABULARY.includes(opts.status)) {
         // Reply must use the status vocabulary; non-vocabulary statuses are
-        // rejected before any correlation.
+        // rejected before any correlation (no store access — no lock needed).
         fail(STATUS_EXIT.rejected, `status "${opts.status}" is outside the vocabulary (${STATUS_VOCABULARY.join(", ")}); reply rejected`);
       }
-      if (record.worker !== opts.worker) {
-        // Replaced worker identity cannot bind a reply (feature scenario 5):
-        // the attempt is rejected and kept inspectable on the record; the
-        // request keeps no outcome bound to the new session.
-        record.rejectedReplies.push({
-          worker: opts.worker,
+      await withLock(dir, requestId, async () => {
+        const record = await load(dir, requestId);
+        if (!record) throw new CommandExit(STATUS_EXIT.notFound, `no request "${requestId}"`);
+        if (record.state === "cancelled") {
+          // A cancelled expectation never binds an outcome (R1.F2): the attempt
+          // is rejected and kept inspectable, like the worker-identity guard.
+          record.rejectedReplies.push({
+            worker: opts.worker,
+            status: opts.status,
+            report: opts.report ?? null,
+            rejectedAt: new Date().toISOString(),
+          });
+          await save(dir, record);
+          throw new CommandExit(STATUS_EXIT.rejected, `reply for "${requestId}" rejected: the request is cancelled; no outcome can bind (attempt recorded)`);
+        }
+        if (record.worker !== opts.worker) {
+          // Replaced worker identity cannot bind a reply (feature scenario 5):
+          // the attempt is rejected and kept inspectable on the record; the
+          // request keeps no outcome bound to the new session.
+          record.rejectedReplies.push({
+            worker: opts.worker,
+            status: opts.status,
+            report: opts.report ?? null,
+            rejectedAt: new Date().toISOString(),
+          });
+          await save(dir, record);
+          throw new CommandExit(STATUS_EXIT.rejected, `reply for "${requestId}" rejected: submitting worker "${opts.worker}" does not match the dispatched worker identity "${record.worker}"; attempt recorded`);
+        }
+        if (record.reply) {
+          // Duplicate reply keeps the first — one logical delivery (scenario 4).
+          console.log(`reply for ${requestId} ignored: first reply (${record.reply.status}) already persisted`);
+          return;
+        }
+        // Reply persists against the original requestId only (scenario 3).
+        record.reply = {
           status: opts.status,
           report: opts.report ?? null,
-          rejectedAt: new Date().toISOString(),
-        });
+          worker: opts.worker,
+          submittedAt: new Date().toISOString(),
+        };
         await save(dir, record);
-        fail(STATUS_EXIT.rejected, `reply for "${requestId}" rejected: submitting worker "${opts.worker}" does not match the dispatched worker identity "${record.worker}"; attempt recorded`);
-      }
-      if (record.reply) {
-        // Duplicate reply keeps the first — one logical delivery (scenario 4).
-        console.log(`reply for ${requestId} ignored: first reply (${record.reply.status}) already persisted`);
-        break;
-      }
-      // Reply persists against the original requestId only (scenario 3).
-      record.reply = {
-        status: opts.status,
-        report: opts.report ?? null,
-        worker: opts.worker,
-        submittedAt: new Date().toISOString(),
-      };
-      await save(dir, record);
-      console.log(`reply recorded for ${requestId} (${opts.status})`);
+        console.log(`reply recorded for ${requestId} (${opts.status})`);
+      });
       break;
     }
     case "consume": {
       requireOpts(opts, ["id", "requester"]);
       const requestId = opts.id;
-      const record = await load(dir, requestId);
-      if (!record) fail(STATUS_EXIT.notFound, `no request "${requestId}"`);
-      if (record.state === "cancelled") {
-        fail(STATUS_EXIT.rejected, `request "${requestId}" is cancelled; no delivery`);
-      }
-      const note = (result) => {
-        record.deliveryAttempts.push({ requester: opts.requester, result, at: new Date().toISOString() });
-        return save(dir, record);
-      };
-      if (record.requester !== opts.requester) {
-        // Requester identity change refuses delivery until an explicit rebind
-        // (feature scenario 10); the refusal stays inspectable.
-        await note("refused-identity-change");
-        fail(STATUS_EXIT.rejected, `delivery for "${requestId}" refused: consuming identity "${opts.requester}" does not match the registered requester "${record.requester}"; explicit rebind required`);
-      }
-      if (!record.reply) {
-        await note("no-settled-reply");
-        console.log(`no settled reply for ${requestId}; nothing to consume`);
-        break;
-      }
-      if (record.paused) {
-        // Paused requester holds the reply as inspectable state; no delivery
-        // is attempted while paused (feature scenario 9).
-        await note("held-paused");
-        console.log(`delivery for ${requestId} held: requester is paused (reply stays persisted)`);
-        break;
-      }
-      if (record.delivered) {
-        // Exactly-once consumption: a late re-delivery attempt after
-        // consumption is a no-op (feature scenario 6).
-        console.log(`reply for ${requestId} already delivered; re-delivery is a no-op`);
-        break;
-      }
-      // Delivery to the registered requester identity (feature scenarios 6
-      // and 8): an unreachable requester simply has not consumed yet — the
-      // reply stays persisted and a later consume delivers it.
-      record.delivered = true;
-      record.deliveredAt = new Date().toISOString();
-      await note("delivered");
-      console.log(`delivered reply for ${requestId}: ${record.reply.status}${record.reply.report ? ` — ${record.reply.report}` : ""}`);
+      await withLock(dir, requestId, async () => {
+        const record = await load(dir, requestId);
+        if (!record) throw new CommandExit(STATUS_EXIT.notFound, `no request "${requestId}"`);
+        if (record.state === "cancelled") {
+          throw new CommandExit(STATUS_EXIT.rejected, `request "${requestId}" is cancelled; no delivery`);
+        }
+        const note = (result) => {
+          record.deliveryAttempts.push({ requester: opts.requester, result, at: new Date().toISOString() });
+          return save(dir, record);
+        };
+        if (record.requester !== opts.requester) {
+          // Requester identity change refuses delivery until an explicit rebind
+          // (feature scenario 10); the refusal stays inspectable.
+          await note("refused-identity-change");
+          throw new CommandExit(STATUS_EXIT.rejected, `delivery for "${requestId}" refused: consuming identity "${opts.requester}" does not match the registered requester "${record.requester}"; explicit rebind required`);
+        }
+        if (!record.reply) {
+          // No write on this path (R2.F1): persisting the no-op attempt was
+          // the write that made the erase race possible; the caller sees the
+          // outcome on stdout instead.
+          console.log(`no settled reply for ${requestId}; nothing to consume`);
+          return;
+        }
+        if (record.paused) {
+          // Paused requester holds the reply as inspectable state; no delivery
+          // is attempted while paused (feature scenario 9).
+          await note("held-paused");
+          console.log(`delivery for ${requestId} held: requester is paused (reply stays persisted)`);
+          return;
+        }
+        if (record.delivered) {
+          // Exactly-once consumption: a late re-delivery attempt after
+          // consumption is a no-op (feature scenario 6).
+          console.log(`reply for ${requestId} already delivered; re-delivery is a no-op`);
+          return;
+        }
+        // Delivery to the registered requester identity (feature scenarios 6
+        // and 8): an unreachable requester simply has not consumed yet — the
+        // reply stays persisted and a later consume delivers it.
+        record.delivered = true;
+        record.deliveredAt = new Date().toISOString();
+        await note("delivered");
+        console.log(`delivered reply for ${requestId}: ${record.reply.status}${record.reply.report ? ` — ${record.reply.report}` : ""}`);
+      });
       break;
     }
     case "pause": {
       requireOpts(opts, ["id"]);
-      const record = await load(dir, opts.id);
-      if (!record) fail(STATUS_EXIT.notFound, `no request "${opts.id}"`);
-      if (record.paused) {
-        console.log(`request ${opts.id} already paused (no-op)`);
-        break;
-      }
-      record.paused = true;
-      await save(dir, record);
-      console.log(`paused ${opts.id} (delivery held while paused)`);
+      await withLock(dir, opts.id, async () => {
+        const record = await load(dir, opts.id);
+        if (!record) throw new CommandExit(STATUS_EXIT.notFound, `no request "${opts.id}"`);
+        if (record.paused) {
+          console.log(`request ${opts.id} already paused (no-op)`);
+          return;
+        }
+        record.paused = true;
+        await save(dir, record);
+        console.log(`paused ${opts.id} (delivery held while paused)`);
+      });
       break;
     }
     case "resume": {
       requireOpts(opts, ["id"]);
-      const record = await load(dir, opts.id);
-      if (!record) fail(STATUS_EXIT.notFound, `no request "${opts.id}"`);
-      if (!record.paused) {
-        console.log(`request ${opts.id} not paused (no-op)`);
-        break;
-      }
-      record.paused = false;
-      await save(dir, record);
-      console.log(`resumed ${opts.id} (delivery may proceed)`);
+      await withLock(dir, opts.id, async () => {
+        const record = await load(dir, opts.id);
+        if (!record) throw new CommandExit(STATUS_EXIT.notFound, `no request "${opts.id}"`);
+        if (!record.paused) {
+          console.log(`request ${opts.id} not paused (no-op)`);
+          return;
+        }
+        record.paused = false;
+        await save(dir, record);
+        console.log(`resumed ${opts.id} (delivery may proceed)`);
+      });
       break;
     }
     case "rebind": {
       requireOpts(opts, ["id", "requester"]);
-      const record = await load(dir, opts.id);
-      if (!record) fail(STATUS_EXIT.notFound, `no request "${opts.id}"`);
-      if (record.requester === opts.requester) {
-        console.log(`request ${opts.id} already bound to requester "${opts.requester}" (no-op)`);
-        break;
-      }
-      // Explicit rebind is the only path past the identity-change refusal.
-      record.rebinds ??= [];
-      record.rebinds.push({ from: record.requester, to: opts.requester, at: new Date().toISOString() });
-      record.requester = opts.requester;
-      await save(dir, record);
-      console.log(`rebound ${opts.id} to requester "${opts.requester}"`);
+      await withLock(dir, opts.id, async () => {
+        const record = await load(dir, opts.id);
+        if (!record) throw new CommandExit(STATUS_EXIT.notFound, `no request "${opts.id}"`);
+        if (record.requester === opts.requester) {
+          console.log(`request ${opts.id} already bound to requester "${opts.requester}" (no-op)`);
+          return;
+        }
+        // Explicit rebind is the only path past the identity-change refusal.
+        record.rebinds ??= [];
+        record.rebinds.push({ from: record.requester, to: opts.requester, at: new Date().toISOString() });
+        record.requester = opts.requester;
+        await save(dir, record);
+        console.log(`rebound ${opts.id} to requester "${opts.requester}"`);
+      });
       break;
     }
     case "cancel": {
       requireOpts(opts, ["id"]);
-      const record = await load(dir, opts.id);
-      if (!record) fail(STATUS_EXIT.notFound, `no request "${opts.id}"`);
-      if (record.state === "cancelled") {
-        console.log(`request ${opts.id} already cancelled (no-op)`);
-        break;
-      }
-      record.state = "cancelled";
-      await save(dir, record);
-      console.log(`cancelled ${opts.id} (no further delivery)`);
+      await withLock(dir, opts.id, async () => {
+        const record = await load(dir, opts.id);
+        if (!record) throw new CommandExit(STATUS_EXIT.notFound, `no request "${opts.id}"`);
+        if (record.state === "cancelled") {
+          console.log(`request ${opts.id} already cancelled (no-op)`);
+          return;
+        }
+        record.state = "cancelled";
+        await save(dir, record);
+        console.log(`cancelled ${opts.id} (no further delivery)`);
+      });
       break;
     }
     case "list": {
@@ -297,6 +324,10 @@ async function main(argv) {
 }
 
 main(process.argv.slice(2)).catch((err) => {
+  if (err instanceof CommandExit) {
+    console.error(`mailbox: ${err.message}`);
+    process.exit(err.code);
+  }
   if (err instanceof StoreError) {
     console.error(`mailbox: ${err.message}`);
     process.exit(err.exit ?? STATUS_EXIT.usage);
