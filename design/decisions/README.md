@@ -1,5 +1,6 @@
 # Design decisions
 
+012 — mailbox-store-error-handling — proposed
 011 — mailbox-cli-node-package-bin — proposed
 010 — claim-record-location — accepted
 009 — language-extractor-dispatch — accepted
