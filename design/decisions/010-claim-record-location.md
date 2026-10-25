@@ -1,6 +1,6 @@
-# 010 — The persistent claim record is the committed behavioral-test-writing traceability report
+# 010 — The persistent claim record lives in the repository (claim blocks in committed test files)
 
-**Status:** accepted (amended 2026-10-23)
+**Status:** accepted (amended 2026-10-23, amended 2026-10-25)
 
 ## Context
 
@@ -14,8 +14,20 @@ mechanism without evidence at plan time.
 
 ## Decision
 
-The persistent claim record is the behavioral-test-writing traceability
-report, **committed in the repository next to the emitted feature files**.
+**Amended 2026-10-25 (issue #45):** the persistent claim record is the
+**claim-block comments in the committed test files** that verify the claims —
+no longer the committed behavioral-test-writing traceability report. The
+`.todo/specs/<work-item>.feature` scratchpad stays planning-only and is never
+committed; during implementation, each claim that has a test is emitted from
+the scratchpad as a claim block (comment on the test carrying the stable
+repo-scoped claim id, claim text, and Gherkin scenario text). Claims without
+a test are not emitted and are not durable — they are review-scope-only. The
+read-only-at-review and operator-writes-residue rules below are retained
+unchanged; coverage/waiver residue now lives with the test-side comment.
+
+**Original decision (2026-10-23):** the persistent claim record was the
+behavioral-test-writing traceability report, **committed in the repository
+next to the emitted feature files**.
 `review-change` performs a **read-only lookup** on it during review, keyed on
 the repo-scoped claim id + enumeration-id (so the id resolves unambiguously
 across the multiple reports a repository may hold). The record is never
@@ -37,5 +49,11 @@ No separate claim-record store is introduced.
   repo-scoped claim id + enumeration-id per the extended report schema;
   review-time access to the record is read-only — the reviewer never writes
   a claim row, and the `coverage: review-only` waiver write is the
-  operator's post-publication step. The record-location choice itself is
-  unchanged.
+  operator's post-publication step. The record-location choice itself was
+  at that point unchanged.
+- Amended 2026-10-25 (issue #45): the record location moves from the
+  committed traceability report to claim-block comments in committed test
+  files. This is a continuation of the same record-location question, not a
+  supersede — the mapping key, the read-only-at-review rule, and the
+  operator-writes-residue rule carry over. A claim's committed test is its
+  record, keyed by the claim id; the report is no longer the durable store.
