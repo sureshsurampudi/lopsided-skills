@@ -457,6 +457,30 @@ test("R1.F4 regression: option values may start with --; missing value still usa
   assert.equal(err.status, 2);
 });
 
+test("R2.F2 regression: non-parse read errors stay within the exit-code vocabulary", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  // a directory at a record path: EISDIR on read
+  fs.mkdirSync(path.join(dir, "x.json"));
+
+  let err = runExpectFailure(dir, "show", "--id", "x");
+  assert.match(err.stderr, /cannot read record "x"/);
+  assert.equal(err.status, 3);
+  assert.ok(!/\n    at /.test(err.stderr), "raw stack trace leaked");
+
+  // unreadable file in the store dir: list warns and skips, exit 0
+  const locked = path.join(dir, "locked.json");
+  fs.writeFileSync(locked, "{\"requestId\":\"locked\"}");
+  if (process.getuid() !== 0) fs.chmodSync(locked, 0o000);
+  let code = 0, out = "", stderr = "";
+  try { out = run(dir, "list"); } catch (e) { code = e.status; out = e.stdout; stderr = e.stderr; }
+  assert.equal(code, 0, `list exit ${code}: ${stderr}`);
+  assert.match(out, /^r1\t/);
+  assert.doesNotMatch(out, /locked/);
+  // list exit stays in the vocabulary even if chmod was ineffective (root)
+  assert.ok([0, 2, 3, 4].includes(code));
+});
+
 test("R1.F3 regression: corrupt store file does not wedge discovery or crash the CLI", () => {
   const dir = makeDir();
   run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");

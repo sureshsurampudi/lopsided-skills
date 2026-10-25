@@ -76,7 +76,10 @@ export async function load(dir, requestId) {
     raw = await fs.promises.readFile(recordPath(dir, requestId), "utf8");
   } catch (err) {
     if (err.code === "ENOENT") return null;
-    throw err;
+    // Non-parse read failures (EISDIR from a directory at the record path,
+    // EACCES, …) are rejected-class store failures (R2.F2): a clean one-line
+    // message within the exit vocabulary, never a raw stack.
+    throw new StoreError(`cannot read record "${requestId}": ${err.message}`, { exit: 3 });
   }
   try {
     return JSON.parse(raw);
@@ -127,8 +130,9 @@ export async function list(dir, { pendingOnly = false } = {}) {
     try {
       record = JSON.parse(await fs.promises.readFile(path.join(dir, name), "utf8"));
     } catch {
-      // A damaged file must not wedge pending discovery (R1.F3): skip it
-      // with a warning; the exit code stays within the documented vocabulary.
+      // A damaged or unreadable file must not wedge pending discovery
+      // (R1.F3/R2.F2): skip it with a warning; the exit code stays within
+      // the documented vocabulary.
       damaged.push(name);
       continue;
     }
