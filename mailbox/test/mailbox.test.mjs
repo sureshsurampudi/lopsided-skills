@@ -310,6 +310,26 @@ test("dispatch of an unknown request fails with not-found", () => {
   assert.match(err.stderr, /no request "missing"/);
 });
 
+test("R1.F3 regression: corrupt store file does not wedge discovery or crash the CLI", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  fs.writeFileSync(path.join(dir, "bad.json"), "garbage{");
+
+  // list skips the damaged file with a warning; valid records survive
+  let out, exit = 0;
+  try { out = run(dir, "list"); } catch (err) { exit = err.status; out = err.stdout; }
+  assert.equal(exit, 0);
+  assert.match(out, /^r1\t/);
+
+  // show of the specifically addressed corrupt record: clean rejection, exit 3
+  const err = runExpectFailure(dir, "show", "--id", "bad");
+  assert.match(err.stderr, /corrupt \(unparseable store file\)/);
+  assert.equal(err.status, 3);
+
+  // valid records remain fully usable
+  assert.equal(JSON.parse(run(dir, "show", "--id", "r1")).requestId, "r1");
+});
+
 test("store persists across CLI invocations (same store, fresh process)", () => {
   const dir = makeDir();
   run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");

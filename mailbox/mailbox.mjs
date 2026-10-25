@@ -288,7 +288,7 @@ async function main(argv) {
 main(process.argv.slice(2)).catch((err) => {
   if (err instanceof StoreError) {
     console.error(`mailbox: ${err.message}`);
-    process.exit(STATUS_EXIT.usage);
+    process.exit(err.exit ?? STATUS_EXIT.usage);
   }
   throw err;
 });

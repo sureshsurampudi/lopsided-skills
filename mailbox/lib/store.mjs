@@ -8,7 +8,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export class StoreError extends Error {}
+export class StoreError extends Error {
+  constructor(message, { exit = 2 } = {}) {
+    super(message);
+    this.exit = exit;
+  }
+}
 
 export function storeDir() {
   return process.env.MAILBOX_DIR || path.join(os.homedir(), ".local", "share", "mailbox");
@@ -31,7 +36,13 @@ export async function load(dir, requestId) {
     if (err.code === "ENOENT") return null;
     throw err;
   }
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // A specifically addressed corrupt record is a rejected-class failure
+    // (R1.F3): report cleanly within the exit vocabulary, never a raw stack.
+    throw new StoreError(`record "${requestId}" is corrupt (unparseable store file)`, { exit: 3 });
+  }
 }
 
 export async function save(dir, record) {
@@ -67,11 +78,23 @@ export async function list(dir, { pendingOnly = false } = {}) {
     throw err;
   }
   const records = [];
+  const damaged = [];
   for (const name of names) {
     if (!name.endsWith(".json")) continue;
-    const record = JSON.parse(await fs.promises.readFile(path.join(dir, name), "utf8"));
+    let record;
+    try {
+      record = JSON.parse(await fs.promises.readFile(path.join(dir, name), "utf8"));
+    } catch {
+      // A damaged file must not wedge pending discovery (R1.F3): skip it
+      // with a warning; the exit code stays within the documented vocabulary.
+      damaged.push(name);
+      continue;
+    }
     if (pendingOnly && !isPending(record)) continue;
     records.push(record);
+  }
+  if (damaged.length) {
+    console.error(`mailbox: warning: skipping unparseable store file(s): ${damaged.join(", ")}`);
   }
   records.sort((a, b) => a.requestId.localeCompare(b.requestId));
   return records;
