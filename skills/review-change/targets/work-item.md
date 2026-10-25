@@ -40,7 +40,7 @@ Do not create work-item attributions. In order:
 1. Locate the implementation using work-item code anchors, linked commits, changed paths, and repository search.
 2. Trace relevant execution paths.
 3. Inspect callers, consumers, tests, configuration, migration/rebuild paths, and error handling.
-4. In the **first review** of a change, map every extracted material claim to the claim record — the claim-block comments in the committed test files, keyed by repo-scoped claim id — during evidence gathering; this is the input to the presence check (`method.md`, *Claim-test presence check*). In later reviews, read the claim blocks in the diff's touched test files for review-only residue instead.
+4. In the **first review** of a change, map every extracted material claim to the claim record — the claim-block comments in the committed test files, keyed by repo-scoped claim id — during evidence gathering; this is the input to the presence check (`method.md`, *Claim-test presence check*). In later reviews, read the claim blocks of claims whose behavior is implemented in the diff's touched files — located by searching the repository's test files keyed on the repo-scoped claim id (`method.md`, *Locating review-only claims*) — for review-only residue instead.
 5. Do not declare a work item implemented merely because related code exists.
 
 ## Rounds channel
