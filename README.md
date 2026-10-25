@@ -31,6 +31,65 @@ unit by unit. `review-change` and `publish-review` are likewise a pair: the
 first writes the report, the second posts it. `worktree-management` gives each
 parallel stream an isolated root, one plan per root.
 
+## The mailbox CLI
+
+`mailbox` (issue [#41](https://github.com/vhallac/lopsided-skills/issues/41))
+is a CLI in this repo that persists and correlates request-reply pairs between
+agents on the **same host, same OS user** — e.g. an orchestrator and its worker
+sessions. Store location: `$MAILBOX_DIR` or `~/.local/share/mailbox` (one JSON
+file per request, atomic writes).
+
+Identity model: a request binds a **requester** identity (who gets the reply)
+and a **worker** identity (who may answer it). Identities are opaque strings
+chosen by the clients.
+
+```sh
+mailbox register --id r1 --requester q1 --worker w1 --instruction "research X"
+                 # creates the reply expectation BEFORE exposure;
+                 # re-registering a live expectation is rejected;
+                 # re-registering a CANCELLED id supersedes it — the old
+                 # record is archived as <id>.cancelled.<ts>.json (its
+                 # rejection history stays inspectable) and a fresh
+                 # expectation is created
+mailbox dispatch --id r1              # mark it dispatched to the worker
+mailbox reply --id r1 --worker w1 --status DONE --report "..."
+mailbox consume --id r1 --requester q1  # exactly-once delivery of the reply
+mailbox list [--pending]              # discover requests (pending = no outcome)
+mailbox show --id r1                  # full record, JSON
+mailbox pause --id r1                 # hold delivery (settable by any client)
+mailbox resume --id r1
+mailbox rebind --id r1 --requester q2 # explicit requester rebind
+mailbox cancel --id r1                # stop the expectation; no delivery
+```
+
+Status vocabulary for replies: `DONE`, `NEEDS_INPUT`, `BLOCKED`, `FAILED`.
+
+Delivery semantics:
+
+- **Exactly-once** — the first successful `consume` marks the reply delivered;
+  later consume attempts and duplicate replies are no-ops.
+- **Acknowledge before mark** — `consume` writes the reply to the requester
+  before the record is marked delivered. A crash between the two means the
+  next `consume` re-delivers: the reply can repeat after a crash, but it is
+  never lost (at-least-once on the crash window, exactly-once otherwise).
+- **Pull-only** — there is no push notification. An undelivered reply is
+  re-attempted by the client's next `consume`; the service persists it until
+  then and nothing is lost, but re-attempt scheduling is the client's (#42's
+  extension's) responsibility.
+- **Unreachable requester** — if the requester has not consumed yet, the reply
+  stays persisted and is delivered on a later `consume`; nothing is lost.
+- **Paused** — while paused, delivery is held as inspectable state, not lost.
+- **Identity change** — a `consume` from an identity other than the registered
+  requester is refused until an explicit `rebind`.
+- **Worker guard** — replies from an identity other than the dispatched worker
+  are rejected and kept inspectable on the record.
+
+Exit codes: `0` success, `2` usage error, `3` rejected (semantic refusal),
+`4` not found.
+
+pi extension integration (the mailbox as a pi extension tool) is issue #42 and
+intentionally out of scope here.
+
 ## Installation
 
 ### Any Agent-Skills-compatible agent (skills.sh)

@@ -1,5 +1,9 @@
 # Design decisions
 
+014 — cancel-is-terminal — proposed
+013 — mailbox-record-mutation-locking — proposed
+012 — mailbox-store-error-handling — proposed
+011 — mailbox-cli-node-package-bin — proposed
 010 — claim-record-location — accepted
 009 — language-extractor-dispatch — accepted
 008 — stdin-placeholder-alias — accepted
