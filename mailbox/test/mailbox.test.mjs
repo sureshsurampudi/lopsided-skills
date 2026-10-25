@@ -457,6 +457,29 @@ test("R1.F4 regression: option values may start with --; missing value still usa
   assert.equal(err.status, 2);
 });
 
+test("R2.F3 regression: consume acknowledges the reply before marking delivered", () => {
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir, "dispatch", "--id", "r1");
+  run(dir, "reply", "--id", "r1", "--worker", "w1", "--status", "DONE", "--report", "all done");
+
+  // Simulate the crash window between print and mark: the save that would
+  // set the delivered mark fails (test hook in save(), after the print).
+  process.env.MAILBOX_FAIL_SAVE = "1";
+  let code = 0, stdout = "", stderr = "";
+  try { stdout = run(dir, "consume", "--id", "r1", "--requester", "q1"); }
+  catch (e) { code = e.status; stdout = e.stdout; stderr = e.stderr; }
+  delete process.env.MAILBOX_FAIL_SAVE;
+  // the requester received the reply BEFORE the mark failed to land
+  assert.match(stdout, /delivered reply for r1: DONE — all done/);
+  assert.ok(code > 0, "expected the simulated save failure to surface");
+  const record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.delivered, false);
+  // the next consume re-delivers — the reply is never lost
+  assert.match(run(dir, "consume", "--id", "r1", "--requester", "q1"), /delivered reply for r1: DONE — all done/);
+  assert.equal(JSON.parse(run(dir, "show", "--id", "r1")).delivered, true);
+});
+
 test("R2.F2 regression: non-parse read errors stay within the exit-code vocabulary", () => {
   const dir = makeDir();
   run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");

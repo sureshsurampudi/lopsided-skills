@@ -64,6 +64,14 @@ Delivery semantics:
 
 - **Exactly-once** — the first successful `consume` marks the reply delivered;
   later consume attempts and duplicate replies are no-ops.
+- **Acknowledge before mark** — `consume` writes the reply to the requester
+  before the record is marked delivered. A crash between the two means the
+  next `consume` re-delivers: the reply can repeat after a crash, but it is
+  never lost (at-least-once on the crash window, exactly-once otherwise).
+- **Pull-only** — there is no push notification. An undelivered reply is
+  re-attempted by the client's next `consume`; the service persists it until
+  then and nothing is lost, but re-attempt scheduling is the client's (#42's
+  extension's) responsibility.
 - **Unreachable requester** — if the requester has not consumed yet, the reply
   stays persisted and is delivered on a later `consume`; nothing is lost.
 - **Paused** — while paused, delivery is held as inspectable state, not lost.

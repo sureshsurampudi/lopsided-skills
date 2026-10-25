@@ -234,10 +234,15 @@ async function main(argv) {
         // Delivery to the registered requester identity (feature scenarios 6
         // and 8): an unreachable requester simply has not consumed yet — the
         // reply stays persisted and a later consume delivers it.
+        // R2.F3 ordering: the reply is written to the requester's stdout
+        // BEFORE the delivered mark is set. A crash between print and mark
+        // means the next consume re-delivers — the reply can repeat but is
+        // never lost. (Delivery is pull-only: the re-attempt is the client's
+        // next consume, review U1.)
+        console.log(`delivered reply for ${requestId}: ${record.reply.status}${record.reply.report ? ` — ${record.reply.report}` : ""}`);
         record.delivered = true;
         record.deliveredAt = new Date().toISOString();
         await note("delivered");
-        console.log(`delivered reply for ${requestId}: ${record.reply.status}${record.reply.report ? ` — ${record.reply.report}` : ""}`);
       });
       break;
     }

@@ -102,6 +102,13 @@ export async function save(dir, record) {
   } finally {
     await fh.close();
   }
+  // Test-only hook (R2.F3 regression): simulate a crash after the tmp write
+  // but before the rename — the window between the requester's acknowledgment
+  // and the delivered mark. Inert without the env var.
+  if (process.env.MAILBOX_FAIL_SAVE === "1") {
+    await fs.promises.rm(tmp, { force: true });
+    throw new StoreError("simulated save failure (MAILBOX_FAIL_SAVE)", { exit: 3 });
+  }
   await fs.promises.rename(tmp, target);
 }
 
