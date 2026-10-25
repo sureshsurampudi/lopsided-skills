@@ -75,6 +75,24 @@ test("R3.F1 regression: dispatch on a cancelled record is an explicit no-op, nev
   assert.equal(record.reply, null);
 });
 
+test("R3.F2 regression: unknown option names are usage rejections; values still verbatim", () => {
+  const dir = makeDir();
+  // typo'd option name: usage exit 2, nothing persisted
+  const err = runExpectFailure(dir, "register", "--id", "c2", "--requester", "q1", "--worker", "w1", "--instruction", "i", "--reqestor", "typo");
+  assert.match(err.stderr, /unknown option --reqestor for command "register"/);
+  assert.equal(err.status, 2);
+  assert.equal(run(dir, "list"), ""); // nothing persisted
+
+  // --opt=value form with an unknown name: same rejection
+  const err2 = runExpectFailure(dir, "reply", "--id", "ghost", "--worker=w1", "--status=DONE", "--bogus=x");
+  assert.match(err2.stderr, /unknown option --bogus for command "reply"/);
+  assert.equal(err2.status, 2);
+
+  // R1.F4 contract intact: values beginning with -- are consumed verbatim
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "--weird flag-like text");
+  assert.equal(JSON.parse(run(dir, "show", "--id", "r1")).instruction, "--weird flag-like text");
+});
+
 function runExpectFailure(dir, ...args) {
   try {
     run(dir, ...args);

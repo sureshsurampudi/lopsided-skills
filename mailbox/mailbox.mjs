@@ -81,11 +81,40 @@ function requireOpts(opts, names) {
   }
 }
 
+// Per-command known-option-name table (R3.F2): an option NAME not listed
+// here is a usage rejection (exit 2). Option VALUES are consumed
+// unconditionally before this check ever runs, so the R1.F4 contract
+// (values beginning with '--' accepted verbatim) is unaffected — the two
+// axes are orthogonal.
+const KNOWN_OPTIONS = {
+  register: ["id", "requester", "worker", "instruction"],
+  dispatch: ["id"],
+  list: ["pending"], // boolean flag, no value
+  show: ["id"],
+  reply: ["id", "worker", "status", "report"],
+  consume: ["id", "requester"],
+  pause: ["id"],
+  resume: ["id"],
+  rebind: ["id", "requester"],
+  cancel: ["id"],
+};
+
+function rejectUnknownOptions(command, opts) {
+  const known = KNOWN_OPTIONS[command];
+  if (!known) return; // unknown command is rejected elsewhere
+  for (const name of Object.keys(opts)) {
+    if (!known.includes(name)) {
+      fail(STATUS_EXIT.usage, `unknown option --${name} for command "${command}" (known: ${known.map((k) => `--${k}`).join(", ")})`);
+    }
+  }
+}
+
 async function main(argv) {
   const [command, ...rest] = argv;
   const dir = storeDir();
   const { opts, positional } = parseArgs(rest);
   if (positional.length) fail(STATUS_EXIT.usage, `unexpected argument: ${positional[0]}`);
+  rejectUnknownOptions(command, opts);
 
   switch (command) {
     case "register": {
