@@ -178,11 +178,11 @@ fields, one per comment line:
      business rule, `DATA-n` for a data requirement, `GUAR` for the
      stakeholder guarantee (the format #39 found missing upstream is pinned
      here, cross-referencing #39);
-  3. optionally, the test name — the test-scoped claim component naming the
-     test the block sits on. Include it so the claim → test link is
-     verifiable by grep alone, not by positional inference, and cannot drift
-     the way ordinal test names did (issue #45 evidence). The review mapping
-     key remains `claim-id[/enumeration-id]` (components 1–2); the test-name
+  3. the test name — the test-scoped claim component naming the test the
+     block sits on; it is mandatory. The claim → test link is verifiable by
+     grep alone, not by positional inference, and cannot drift the way
+     ordinal test names did (issue #45 evidence). The review mapping key
+     remains `claim-id[/enumeration-id]` (components 1–2); the test-name
      component is claim-block-specific and does not change that key.
   Reorder-stable rule: `n` counts per kind within the feature file, assigned
   at first derivation, and is never renumbered — later claims and amendments
@@ -197,7 +197,8 @@ fields, one per comment line:
 Example (Python):
 
 ```
-# claim: mailbox-svc-BR-2/BVR-2/test_refuses_sixth_open_item
+# claim: mailbox-svc-BR-2/BVR-2/test_refuses_sixth_open_item  (test-name
+#   component is mandatory — the claim → test link stays grep-verifiable)
 # claim text: at most 5 items may be open at once; the 6th open attempt is refused
 # scenario: Scenario: At most 5 items open — When the 6th open attempt is made Then it is refused
 def test_refuses_sixth_open_item():
