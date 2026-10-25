@@ -1,5 +1,6 @@
 # Design decisions
 
+014 — cancel-is-terminal — proposed
 013 — mailbox-record-mutation-locking — proposed
 012 — mailbox-store-error-handling — proposed
 011 — mailbox-cli-node-package-bin — proposed
