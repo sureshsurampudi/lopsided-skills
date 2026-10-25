@@ -93,6 +93,23 @@ test("R3.F2 regression: unknown option names are usage rejections; values still 
   assert.equal(JSON.parse(run(dir, "show", "--id", "r1")).instruction, "--weird flag-like text");
 });
 
+test("R3.F3 regression: unreadable store directory exits within the vocabulary", () => {
+  if (process.getuid() === 0) return; // chmod 000 cannot block root
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  fs.chmodSync(dir, 0o000);
+  let err;
+  try { run(dir, "list"); err = null; }
+  catch (e) { err = e; }
+  fs.chmodSync(dir, 0o700);
+  assert.ok(err, "expected list to fail on an unreadable store dir");
+  assert.equal(err.status, 3);
+  assert.match(err.stderr, /cannot read store directory/);
+  assert.ok(!/\n    at /.test(err.stderr), "raw stack trace leaked");
+  // recovery: readable again, everything works
+  assert.match(run(dir, "list"), /^r1\t/);
+});
+
 function runExpectFailure(dir, ...args) {
   try {
     run(dir, ...args);

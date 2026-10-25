@@ -127,7 +127,10 @@ export async function list(dir, { pendingOnly = false } = {}) {
     names = await fs.promises.readdir(dir);
   } catch (err) {
     if (err.code === "ENOENT") return [];
-    throw err;
+    // Directory-level enumeration failures (EACCES on the store dir, …) are
+    // rejected-class store failures (R3.F3): a clean one-line message within
+    // the exit vocabulary, never a raw stack — decision 012 holds here too.
+    throw new StoreError(`cannot read store directory: ${err.message}`, { exit: 3 });
   }
   const records = [];
   const damaged = [];
