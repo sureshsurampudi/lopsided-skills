@@ -45,6 +45,36 @@ function assertWithinVocabulary(code, context) {
   assert.ok([0, 2, 3, 4].includes(code), `${context}: exit ${code} outside 0/2/3/4`);
 }
 
+test("R3.F1 regression: dispatch on a cancelled record is an explicit no-op, never a resurrection", () => {
+  // variant 1 (the review's probe): reply → cancel → dispatch → consume delivers?
+  const dir = makeDir();
+  run(dir, "register", "--id", "r1", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir, "dispatch", "--id", "r1");
+  run(dir, "reply", "--id", "r1", "--worker", "w1", "--status", "DONE", "--report", "x");
+  run(dir, "cancel", "--id", "r1");
+
+  const out = run(dir, "dispatch", "--id", "r1");
+  assert.match(out, /ignored: request is cancelled \(no-op\)/);
+  let record = JSON.parse(run(dir, "show", "--id", "r1"));
+  assert.equal(record.state, "cancelled");
+
+  // the reply cannot deliver past the cancel
+  const err = runExpectFailure(dir, "consume", "--id", "r1", "--requester", "q1");
+  assert.match(err.stderr, /is cancelled; no delivery/);
+  assert.equal(JSON.parse(run(dir, "show", "--id", "r1")).delivered, false);
+
+  // variant 2: cancel → dispatch → reply — a fresh outcome must not bind
+  const dir2 = makeDir();
+  run(dir2, "register", "--id", "r2", "--requester", "q1", "--worker", "w1", "--instruction", "i");
+  run(dir2, "cancel", "--id", "r2");
+  assert.match(run(dir2, "dispatch", "--id", "r2"), /ignored: request is cancelled/);
+  const err2 = runExpectFailure(dir2, "reply", "--id", "r2", "--worker", "w1", "--status", "DONE");
+  assert.match(err2.stderr, /the request is cancelled; no outcome can bind/);
+  record = JSON.parse(run(dir2, "show", "--id", "r2"));
+  assert.equal(record.state, "cancelled");
+  assert.equal(record.reply, null);
+});
+
 function runExpectFailure(dir, ...args) {
   try {
     run(dir, ...args);

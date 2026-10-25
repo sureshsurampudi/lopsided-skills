@@ -132,6 +132,13 @@ async function main(argv) {
           console.log(`dispatched ${opts.id} (already dispatched; no-op)`);
           return;
         }
+        if (record.state === "cancelled") {
+          // Cancel is terminal for dispatch (R3.F1, explicit no-op per the
+          // operator decision): the state must never flip back — a resurrected
+          // expectation would let replies bind and deliver past the cancel.
+          console.log(`dispatch ${opts.id} ignored: request is cancelled (no-op)`);
+          return;
+        }
         record.state = "dispatched";
         record.dispatchedAt = new Date().toISOString();
         await save(dir, record);
