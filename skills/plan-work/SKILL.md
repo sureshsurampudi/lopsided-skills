@@ -124,6 +124,11 @@ review findings' corrected-behavior statements, graded the same way. For
 feature plans, read the main success steps, extensions, and business
 rules/BVRs; ignore implementation notes and developer-only commentary.
 
+Nice-to-have (bugfix): a bugfix plan may add or amend claim blocks for the
+corrected behavior. If implementing them proves difficult, defer via a
+separate issue — that decision is made during the implementation plan, not
+after the fact.
+
 - Grade each claim: **executable as behavior / needs clarification / not
   behavioral**. A claim that is not executable as behavior is a grooming
   finding — push a clarification question back to the issue.
